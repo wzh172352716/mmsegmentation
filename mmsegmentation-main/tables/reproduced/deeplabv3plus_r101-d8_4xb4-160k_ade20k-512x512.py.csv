@@ -1,0 +1,2 @@
+flops,params,fps,fps_var,mIoU
+0.256T,62.683M,8.91,0.0069,45.47

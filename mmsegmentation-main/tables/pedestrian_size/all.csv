@@ -1,0 +1,11 @@
+	probability total (%)	pixel size (s) where p(s>=x) > 95%, x:
+b0	80.9	55
+b1	83.6	40
+b2	83.7	40
+b3	83.6	40
+b4	84.2	40
+b5	83.3	45
+segnext tiny	83.6	40
+segnext small	83.3	45
+segnext base	85.3	35
+segnext large	85	35

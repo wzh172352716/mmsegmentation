@@ -1,0 +1,114 @@
+/var/spool/slurmd/job747546/slurm_script: line 26: activate: No such file or directory
+Tue Jul 30 17:01:11 2024       
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 535.104.05             Driver Version: 535.104.05   CUDA Version: 12.2     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
+|                                         |                      |               MIG M. |
+|=========================================+======================+======================|
+|   0  NVIDIA GeForce GTX 1080 Ti     On  | 00000000:86:00.0 Off |                  N/A |
+|  0%   27C    P8               8W / 250W |      0MiB / 11264MiB |      0%      Default |
+|                                         |                      |                  N/A |
++-----------------------------------------+----------------------+----------------------+
+                                                                                         
++---------------------------------------------------------------------------------------+
+| Processes:                                                                            |
+|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+|        ID   ID                                                             Usage      |
+|=======================================================================================|
+|  No running processes found                                                           |
++---------------------------------------------------------------------------------------+
+Node: gpu04
+Job internal GPU id(s): 0
+Job external GPU id(s): 5
+Create Model
+/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmseg/models/builder.py:36: UserWarning: ``build_loss`` would be deprecated soon, please use ``mmseg.registry.MODELS.build()`` 
+  warnings.warn('``build_loss`` would be deprecated soon, please use '
+/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmseg/models/losses/cross_entropy_loss.py:250: UserWarning: Default ``avg_non_ignore`` is False, if you would like to ignore the certain label and average loss over non-ignore labels, which is the same with PyTorch official cross_entropy, set ``avg_non_ignore=True``.
+  warnings.warn(
+Loads checkpoint by local backend from path: pspnet_r50-d8_512x1024_40k_cityscapes_20200605_003338-2966598c.pth
+Model created
+Start Inference
+Inference finished
+<SegDataSample(
+
+    META INFORMATION
+    img_shape: (1024, 2048)
+    img_path: 'demo/demo.png'
+    ori_shape: (512, 1024)
+    scale_factor: (2.0, 2.0)
+
+    DATA FIELDS
+    pred_sem_seg: <PixelData(
+        
+            META INFORMATION
+        
+            DATA FIELDS
+            data: tensor([[[2, 2, 5,  ..., 2, 2, 2],
+                         [2, 2, 5,  ..., 2, 2, 2],
+                         [2, 2, 5,  ..., 2, 2, 2],
+                         ...,
+                         [0, 0, 0,  ..., 0, 0, 0],
+                         [0, 0, 0,  ..., 0, 0, 0],
+                         [0, 0, 0,  ..., 0, 0, 0]]], device='cuda:0')
+        ) at 0x7fb80c53b970>
+    seg_logits: <PixelData(
+        
+            META INFORMATION
+        
+            DATA FIELDS
+            data: tensor([[[-0.5961, -0.5961, -0.7802,  ..., -0.0294,  0.0758,  0.0758],
+                         [-0.5961, -0.5961, -0.7802,  ..., -0.0294,  0.0758,  0.0758],
+                         [-0.6740, -0.6740, -0.8586,  ..., -0.0554,  0.0452,  0.0452],
+                         ...,
+                         [ 6.9383,  6.9383,  7.0711,  ...,  6.9134,  6.7633,  6.7633],
+                         [ 6.8427,  6.8427,  6.9815,  ...,  6.8204,  6.6694,  6.6694],
+                         [ 6.8427,  6.8427,  6.9815,  ...,  6.8204,  6.6694,  6.6694]],
+                
+                        [[-0.7063, -0.7063, -0.8524,  ..., -0.4532, -0.4214, -0.4214],
+                         [-0.7063, -0.7063, -0.8524,  ..., -0.4532, -0.4214, -0.4214],
+                         [-0.6847, -0.6847, -0.8357,  ..., -0.4683, -0.4370, -0.4370],
+                         ...,
+                         [ 2.3575,  2.3575,  2.3345,  ...,  3.2683,  3.1939,  3.1939],
+                         [ 2.3347,  2.3347,  2.3112,  ...,  3.1627,  3.0900,  3.0900],
+                         [ 2.3347,  2.3347,  2.3112,  ...,  3.1627,  3.0900,  3.0900]],
+                
+                        [[ 4.5623,  4.5623,  4.5450,  ...,  7.9977,  7.8404,  7.8404],
+                         [ 4.5623,  4.5623,  4.5450,  ...,  7.9977,  7.8404,  7.8404],
+                         [ 4.6082,  4.6082,  4.5972,  ...,  8.0856,  7.9278,  7.9278],
+                         ...,
+                         [ 0.7361,  0.7361,  0.6094,  ...,  0.6336,  0.7916,  0.7916],
+                         [ 0.8480,  0.8480,  0.7148,  ...,  0.7649,  0.9252,  0.9252],
+                         [ 0.8480,  0.8480,  0.7148,  ...,  0.7649,  0.9252,  0.9252]],
+                
+                        ...,
+                
+                        [[-0.8906, -0.8906, -0.9041,  ..., -0.7228, -0.7511, -0.7511],
+                         [-0.8906, -0.8906, -0.9041,  ..., -0.7228, -0.7511, -0.7511],
+                         [-0.8875, -0.8875, -0.9032,  ..., -0.7047, -0.7305, -0.7305],
+                         ...,
+                         [-0.8102, -0.8102, -0.8072,  ..., -1.1634, -1.1943, -1.1943],
+                         [-0.8283, -0.8283, -0.8234,  ..., -1.1581, -1.1907, -1.1907],
+                         [-0.8283, -0.8283, -0.8234,  ..., -1.1581, -1.1907, -1.1907]],
+                
+                        [[-1.5202, -1.5202, -1.5455,  ..., -1.8643, -1.8374, -1.8374],
+                         [-1.5202, -1.5202, -1.5455,  ..., -1.8643, -1.8374, -1.8374],
+                         [-1.5123, -1.5123, -1.5430,  ..., -1.8399, -1.8105, -1.8105],
+                         ...,
+                         [-1.3940, -1.3940, -1.3674,  ..., -1.2587, -1.2877, -1.2877],
+                         [-1.4219, -1.4219, -1.3948,  ..., -1.2782, -1.3095, -1.3095],
+                         [-1.4219, -1.4219, -1.3948,  ..., -1.2782, -1.3095, -1.3095]],
+                
+                        [[-0.9952, -0.9952, -0.9719,  ..., -1.5205, -1.5110, -1.5110],
+                         [-0.9952, -0.9952, -0.9719,  ..., -1.5205, -1.5110, -1.5110],
+                         [-0.9858, -0.9858, -0.9617,  ..., -1.5043, -1.4934, -1.4934],
+                         ...,
+                         [-1.0495, -1.0495, -1.0067,  ..., -0.8389, -0.8790, -0.8790],
+                         [-1.1039, -1.1039, -1.0571,  ..., -0.8681, -0.9096, -0.9096],
+                         [-1.1039, -1.1039, -1.0571,  ..., -0.8681, -0.9096, -0.9096]]],
+                       device='cuda:0')
+        ) at 0x7fb80c52a5e0>
+) at 0x7fb80c53b9a0>
+/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/visualization/visualizer.py:196: UserWarning: Failed to add <class 'mmengine.visualization.vis_backend.LocalVisBackend'>, please provide the `save_dir` argument.
+  warnings.warn(f'Failed to add {vis_backend.__class__}, '
