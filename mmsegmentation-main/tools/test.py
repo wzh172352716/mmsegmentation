@@ -2,15 +2,15 @@
 import argparse
 import os
 import os.path as osp
-
+import zeus
 from mmengine.config import Config, DictAction
 from mmengine.runner import Runner
 
-from zeus.monitor import ZeusMonitor
-import projects
+# from zeus.monitor import ZeusMonitor
+# import projects
 
-import pydevd_pycharm
-pydevd_pycharm.settrace('134.169.30.162', port=8906, stdoutToServer=True, stderrToServer=True)
+# import pydevd_pycharm
+# pydevd_pycharm.settrace('134.169.30.162', port=8906, stdoutToServer=True, stderrToServer=True)
 
 
 # TODO: support fuse_conv_bn, visualization, and format_only
@@ -122,12 +122,12 @@ def main():
     runner = Runner.from_cfg(cfg)
 
     # start testing
-    monitor = ZeusMonitor(gpu_indices=[0])
-    monitor.begin_window("heavy computation")
-    runner.test()
-    measurement = monitor.end_window("heavy computation")
-    print(f"Energy: {measurement.total_energy} J")
-    print(f"Time  : {measurement.time} s")
+    # monitor = ZeusMonitor(gpu_indices=[0])
+    # monitor.begin_window("heavy computation")
+    # runner.test()
+    # measurement = monitor.end_window("heavy computation")
+    # print(f"Energy: {measurement.total_energy} J")
+    # print(f"Time  : {measurement.time} s")
 
 
 

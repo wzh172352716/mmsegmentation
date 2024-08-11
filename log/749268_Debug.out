@@ -1,0 +1,12 @@
+/var/spool/slurmd/job749268/slurm_script: line 26: activate: No such file or directory
+Traceback (most recent call last):
+  File "tools/test.py", line 135, in <module>
+    main()
+  File "tools/test.py", line 92, in main
+    cfg = Config.fromfile(args.config)
+  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/config/config.py", line 460, in fromfile
+    lazy_import is None and not Config._is_lazy_import(filename):
+  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/config/config.py", line 1661, in _is_lazy_import
+    with open(filename, encoding='utf-8') as f:
+FileNotFoundError: [Errno 2] No such file or directory: 'configs/deconfigs/deeplabv3plus/deeplabv3plus_r18-d8_4xb2-80k_cityscapes-512x1024.py'
+srun: error: gpu05: task 0: Exited with exit code 1
