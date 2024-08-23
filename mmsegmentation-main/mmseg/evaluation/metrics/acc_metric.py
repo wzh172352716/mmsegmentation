@@ -1,22 +1,23 @@
 from typing import Optional, Sequence, Dict
-from mmengine.evaluator import BaseMetric  # 从 MMEngine 导入基础 Metric 类
+from mmengine.evaluator import BaseMetric  
 import torch
-import torch.nn.functional as F  # 用于处理张量和神经网络功能的 PyTorch 模块
-from mmseg.registry import METRICS  # 从 MMSegmentation 导入注册器，用于注册自定义 Metric
+import torch.nn.functional as F  
+from mmseg.registry import METRICS  
 
-
-@METRICS.register_module()  # 将这个类注册为 MMSegmentation 的度量工具模块
+print('调用')
+@METRICS.register_module()  
 class AccuracyMetric(BaseMetric):
     def __init__(self,
-                 accuracyD=True,  # 是否计算直接精度
-                 accuracyI=True,  # 是否计算图像级别精度
-                 accuracyC=True,  # 是否计算类别级别精度
-                 q=1,  # 用于精度计算的百分比参数
-                 binary=False,  # 是否为二分类任务
-                 num_classes=19,  # 类别数量，默认为19
-                 ignore_index=None,  # 忽略标签中的某些索引
-                 collect_device: str = 'cpu',  # 计算时使用的设备，默认为'cpu'
-                 prefix: Optional[str] = None):  # 度量名称的前缀
+                 accuracyD=True,  
+                 accuracyI=True, 
+                 accuracyC=True,  
+                 q=1,  
+                 binary=False,  
+                 num_classes=19,  # for cityscapes
+                 ignore_index=None,  
+                 collect_device: str = 'cpu',  
+                 prefix: Optional[str] = None):
+        print("AccuracyMetric 已被注册！")  
         super().__init__(collect_device=collect_device, prefix=prefix)
         self.accuracyD = accuracyD
         self.accuracyI = accuracyI
@@ -25,12 +26,12 @@ class AccuracyMetric(BaseMetric):
         self.binary = binary
         self.num_classes = num_classes
         self.ignore_index = ignore_index
-        self.tp = torch.tensor([])  # 真阳性
-        self.tn = torch.tensor([])  # 真阴性
-        self.fp = torch.tensor([])  # 假阳性
-        self.fn = torch.tensor([])  # 假阴性
-        self.active_classes = torch.tensor([], dtype=torch.bool)  # 活跃类的布尔掩码
-        self.image_file = []  # 存储图像文件名
+        self.tp = torch.tensor([])  
+        self.tn = torch.tensor([])  
+        self.fp = torch.tensor([])  
+        self.fn = torch.tensor([])  
+        self.active_classes = torch.tensor([], dtype=torch.bool)  
+        self.image_file = []  
     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
         for data_sample in data_samples:
             pred = data_sample['pred_sem_seg']['data'].squeeze().cpu()  # 获取预测值并移到CPU上
