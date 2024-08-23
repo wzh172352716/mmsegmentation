@@ -2,7 +2,7 @@
 import argparse
 import os
 import os.path as osp
-import zeus
+# import zeus
 from mmengine.config import Config, DictAction
 from mmengine.runner import Runner
 
@@ -124,7 +124,7 @@ def main():
     # start testing
     # monitor = ZeusMonitor(gpu_indices=[0])
     # monitor.begin_window("heavy computation")
-    # runner.test()
+    runner.test()
     # measurement = monitor.end_window("heavy computation")
     # print(f"Energy: {measurement.total_energy} J")
     # print(f"Time  : {measurement.time} s")
