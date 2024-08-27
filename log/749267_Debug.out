@@ -1,6 +1,0 @@
-/var/spool/slurmd/job749267/slurm_script: line 26: activate: No such file or directory
-Traceback (most recent call last):
-  File "tools/test.py", line 9, in <module>
-    from zeus.monitor import ZeusMonitor
-ModuleNotFoundError: No module named 'zeus.monitor'; 'zeus' is not a package
-srun: error: gpu05: task 0: Exited with exit code 1

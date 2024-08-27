@@ -1,0 +1,3 @@
+/var/spool/slurmd/job751152/slurm_script: line 26: activate: No such file or directory
+/home/teamproject_mmseg/miniconda3/envs/openmmlab/bin/python: can't open file 'tools/test.py': [Errno 2] No such file or directory
+srun: error: gpu05: task 0: Exited with exit code 2

@@ -1,8 +1,0 @@
-
-CondaError: Run 'conda init' before 'conda activate'
-
-Traceback (most recent call last):
-  File "/beegfs/work_fast/teamproject_mmseg/mmsegmentation-main/tools/test.py", line 5, in <module>
-srun: error: gpu05: task 0: Exited with exit code 1
-    import zeus
-ModuleNotFoundError: No module named 'zeus'
