@@ -243,6 +243,8 @@ class PixelSizeRecallMetric(BaseMetric):
             cv2.imwrite(f"debug_{basename}.png", out)
 
         return res
+
+@METRICS.register_module()
 class diou(BaseMetric):
     def __init__(self,
                  accuracyD=True,  
