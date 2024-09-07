@@ -13,7 +13,8 @@ from PIL import Image
 
 from mmseg.utils import datafrombytes
 
-
+import torch
+import torch.nn.functional as F  
 # sbatch tools/slurm_test_ifn.sh configs/segformer/segformer_mit-b0_8xb1-160k_acdc-512x512.py /beegfs/work/bartels/mmsegmentation/downloaded_ckpts/segformer/segformer_mit-b0_8xb1-160k_acdc-512x512.py.pth test_evaluator.type="PedestrianSizeMetric"
 
 @METRICS.register_module()
@@ -247,15 +248,16 @@ class PixelSizeRecallMetric(BaseMetric):
 @METRICS.register_module()
 class diou(BaseMetric):
     def __init__(self,
-                 accuracyD=True,  
-                 accuracyI=True, 
-                 accuracyC=True,  
-                 q=1,  
-                 binary=False,  
+                 accuracyD=True,
+                 accuracyI=True,
+                 accuracyC=True,
+                 q=1,
+                 binary=False,
                  num_classes=19,  # for cityscapes
-                 ignore_index=None,  
-                 collect_device: str = 'cpu',  
-                 prefix: Optional[str] = None):
+                 ignore_index=None,
+                 collect_device: str = 'cpu',
+                 prefix: Optional[str] = None,
+                 **kwargs) -> None:
         super().__init__(collect_device=collect_device, prefix=prefix)
         self.accuracyD = accuracyD
         self.accuracyI = accuracyI
@@ -264,11 +266,11 @@ class diou(BaseMetric):
         self.binary = binary
         self.num_classes = num_classes
         self.ignore_index = ignore_index
-        self.tp = torch.tensor([])  
-        self.tn = torch.tensor([])  
-        self.fp = torch.tensor([])  
-        self.fn = torch.tensor([])  
-        self.active_classes = torch.tensor([], dtype=torch.bool)  
+        self.tp = torch.tensor([], device=collect_device)  
+        self.tn = torch.tensor([], device=collect_device)  
+        self.fp = torch.tensor([], device=collect_device)  
+        self.fn = torch.tensor([], device=collect_device)  
+        self.active_classes = torch.tensor([], dtype=torch.bool, device=collect_device)  
         self.image_file = []  
 
     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
@@ -276,14 +278,20 @@ class diou(BaseMetric):
             pred = data_sample['pred_sem_seg']['data'].squeeze().cpu()  # 获取预测值并移到CPU上
             label = data_sample['gt_sem_seg']['data'].squeeze().cpu()  # 获取真实标签
             image_file = data_sample.get('img_path', None)  # 获取图像文件名
+
             batch_size = pred.size(0)
             pred = pred.view(batch_size, -1)
             label = label.view(batch_size, -1)
-            keep_mask = (label != self.ignore_index)  # 忽略指定的索引
+            if self.ignore_index is not None:
+                keep_mask = (label != self.ignore_index).to(torch.bool)  # 忽略指定的索引，并确保为布尔张量
+            else:
+                keep_mask = torch.ones_like(label, dtype=torch.bool)
             keep_mask = keep_mask.unsqueeze(1).expand(batch_size, self.num_classes, -1)
+
             pred = F.one_hot(pred, num_classes=self.num_classes).permute(0, 2, 1)  # 独热编码预测结果
             label = torch.clamp(label, 0, self.num_classes - 1)  # 将标签值限制在类别范围内
             label = F.one_hot(label, num_classes=self.num_classes).permute(0, 2, 1)
+
             for i in range(batch_size):
                 keep_mask_i = keep_mask[i, :, :]
                 pred_i = pred[i, :, :][keep_mask_i].reshape(self.num_classes, -1)
@@ -291,21 +299,26 @@ class diou(BaseMetric):
 
                 if label_i.size(1) < 1:
                     continue
+
                 tp = torch.logical_and(pred_i == 1, label_i == 1)  # 真阳性
                 tn = torch.logical_and(pred_i == 0, label_i == 0)  # 真阴性
                 fp = torch.logical_and(pred_i == 1, label_i == 0)  # 假阳性
                 fn = torch.logical_and(pred_i == 0, label_i == 1)  # 假阴性
+
                 tp = torch.sum(tp, dim=1).unsqueeze(0)
                 tn = torch.sum(tn, dim=1).unsqueeze(0)
                 fp = torch.sum(fp, dim=1).unsqueeze(0)
                 fn = torch.sum(fn, dim=1).unsqueeze(0)
+
                 if self.binary:
                     mask = torch.amax(pred_i + label_i, dim=1) > 0.5
                 else:
                     mask = torch.amax(label_i, dim=1) > 0.5
+
                 mask = mask.unsqueeze(0)
                 active_classes = torch.zeros(self.num_classes, dtype=torch.bool).unsqueeze(0)
                 active_classes[mask] = 1
+
                 self.tp = torch.cat((self.tp, tp), dim=0)
                 self.tn = torch.cat((self.tn, tn), dim=0)
                 self.fp = torch.cat((self.fp, fp), dim=0)
@@ -333,7 +346,7 @@ class diou(BaseMetric):
             fp = fp[1]
             fn = fn[1]
 
-        Acc = 100 * torch.sum(tp) / torch.sum(tp + fn + 1e-6)
+        Acc = 100 * torch.sum(tp) / (torch.sum(tp + fn) + 1e-6)
         mAccD = 100 * torch.mean(tp / (tp + fn + 1e-6))
         mIoUD = 100 * torch.mean(tp / (tp + fp + fn + 1e-6))
         mDiceD = 100 * torch.mean(2 * tp / (2 * tp + fp + fn + 1e-6))

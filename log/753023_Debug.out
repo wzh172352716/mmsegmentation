@@ -2,14 +2,14 @@
   warnings.warn(
 /home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/utils/dl_utils/setup_env.py:56: UserWarning: Setting MKL_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed.
   warnings.warn(
-09/07 11:16:44 - mmengine - INFO - 
+09/07 11:45:14 - mmengine - INFO - 
 ------------------------------------------------------------
 System environment:
     sys.platform: linux
     Python: 3.8.19 (default, Mar 20 2024, 19:58:24) [GCC 11.2.0]
     CUDA available: True
     MUSA available: False
-    numpy_random_seed: 448347432
+    numpy_random_seed: 1820304180
     GPU 0: NVIDIA GeForce RTX 2080 Ti
     CUDA_HOME: None
     GCC: gcc (GCC) 4.8.5 20150623 (Red Hat 4.8.5-44)
@@ -36,14 +36,14 @@ System environment:
 Runtime environment:
     cudnn_benchmark: True
     mp_cfg: {'mp_start_method': 'fork', 'opencv_num_threads': 0}
-    dist_cfg: {'backend': 'nccl', 'port': 58983}
-    seed: 448347432
+    dist_cfg: {'backend': 'nccl', 'port': 36873}
+    seed: 1820304180
     Distributed launcher: slurm
     Distributed training: True
     GPU number: 1
 ------------------------------------------------------------
 
-09/07 11:16:44 - mmengine - INFO - Config:
+09/07 11:45:14 - mmengine - INFO - Config:
 crop_size = (
     512,
     1024,
@@ -79,7 +79,7 @@ default_hooks = dict(
 default_scope = 'mmseg'
 env_cfg = dict(
     cudnn_benchmark=True,
-    dist_cfg=dict(backend='nccl', port=58983),
+    dist_cfg=dict(backend='nccl', port=36873),
     mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0))
 img_ratios = [
     0.5,
@@ -349,7 +349,7 @@ work_dir = './work_dirs/deeplabv3plus_r18-d8_4xb2-80k_cityscapes-512x1024'
   warnings.warn(
 /home/teamproject_mmseg/work_fast/mmsegmentation-main/mmseg/engine/hooks/visualization_hook.py:61: UserWarning: The draw is False, it means that the hook for visualization will not take effect. The results will NOT be visualized or stored.
   warnings.warn('The draw is False, it means that the '
-09/07 11:16:46 - mmengine - INFO - Hooks will be executed in the following order:
+09/07 11:45:16 - mmengine - INFO - Hooks will be executed in the following order:
 before_run:
 (VERY_HIGH   ) RuntimeInfoHook                    
 (BELOW_NORMAL) LoggerHook                         
@@ -436,28 +436,26 @@ after_run:
  -------------------- 
 /home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/torch/utils/data/dataloader.py:560: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
   warnings.warn(_create_warning_msg(
-Traceback (most recent call last):
-  File "tools/test.py", line 135, in <module>
-    main()
-  File "tools/test.py", line 127, in main
-    runner.test()
-  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/runner/runner.py", line 1816, in test
-    self._test_loop = self.build_test_loop(self._test_loop)  # type: ignore
-  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/runner/runner.py", line 1604, in build_test_loop
-    loop = LOOPS.build(
-  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/registry/registry.py", line 570, in build
-    return self.build_func(cfg, *args, **kwargs, registry=self)
-  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/registry/build_functions.py", line 121, in build_from_cfg
-    obj = obj_cls(**args)  # type: ignore
-  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/runner/loops.py", line 423, in __init__
-    self.evaluator = runner.build_evaluator(evaluator)  # type: ignore
-  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/runner/runner.py", line 1318, in build_evaluator
-    return Evaluator(evaluator)  # type: ignore
-  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/evaluator/evaluator.py", line 25, in __init__
-    self.metrics.append(METRICS.build(metric))
-  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/registry/registry.py", line 570, in build
-    return self.build_func(cfg, *args, **kwargs, registry=self)
-  File "/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/mmengine/registry/build_functions.py", line 100, in build_from_cfg
-    raise KeyError(
-KeyError: 'diou is not in the mmseg::metric registry. Please check whether the value of `diou` is correct or it was registered as expected. More details can be found at https://mmengine.readthedocs.io/en/latest/advanced_tutorials/config.html#import-the-custom-module'
-srun: error: gpu05: task 0: Exited with exit code 1
+09/07 11:45:17 - mmengine - WARNING - The prefix is not set in metric class diou.
+Loads checkpoint by local backend from path: checkpoint/deeplabv3_r18-d8_512x1024_80k_cityscapes_20201225_021506-23dffbe2.pth
+The model and loaded state dict do not match exactly
+
+unexpected key in source state_dict: decode_head.aspp_modules.1.conv.weight, decode_head.aspp_modules.1.bn.weight, decode_head.aspp_modules.1.bn.bias, decode_head.aspp_modules.1.bn.running_mean, decode_head.aspp_modules.1.bn.running_var, decode_head.aspp_modules.1.bn.num_batches_tracked, decode_head.aspp_modules.2.conv.weight, decode_head.aspp_modules.2.bn.weight, decode_head.aspp_modules.2.bn.bias, decode_head.aspp_modules.2.bn.running_mean, decode_head.aspp_modules.2.bn.running_var, decode_head.aspp_modules.2.bn.num_batches_tracked, decode_head.aspp_modules.3.conv.weight, decode_head.aspp_modules.3.bn.weight, decode_head.aspp_modules.3.bn.bias, decode_head.aspp_modules.3.bn.running_mean, decode_head.aspp_modules.3.bn.running_var, decode_head.aspp_modules.3.bn.num_batches_tracked
+
+missing keys in source state_dict: decode_head.aspp_modules.1.depthwise_conv.conv.weight, decode_head.aspp_modules.1.depthwise_conv.bn.weight, decode_head.aspp_modules.1.depthwise_conv.bn.bias, decode_head.aspp_modules.1.depthwise_conv.bn.running_mean, decode_head.aspp_modules.1.depthwise_conv.bn.running_var, decode_head.aspp_modules.1.pointwise_conv.conv.weight, decode_head.aspp_modules.1.pointwise_conv.bn.weight, decode_head.aspp_modules.1.pointwise_conv.bn.bias, decode_head.aspp_modules.1.pointwise_conv.bn.running_mean, decode_head.aspp_modules.1.pointwise_conv.bn.running_var, decode_head.aspp_modules.2.depthwise_conv.conv.weight, decode_head.aspp_modules.2.depthwise_conv.bn.weight, decode_head.aspp_modules.2.depthwise_conv.bn.bias, decode_head.aspp_modules.2.depthwise_conv.bn.running_mean, decode_head.aspp_modules.2.depthwise_conv.bn.running_var, decode_head.aspp_modules.2.pointwise_conv.conv.weight, decode_head.aspp_modules.2.pointwise_conv.bn.weight, decode_head.aspp_modules.2.pointwise_conv.bn.bias, decode_head.aspp_modules.2.pointwise_conv.bn.running_mean, decode_head.aspp_modules.2.pointwise_conv.bn.running_var, decode_head.aspp_modules.3.depthwise_conv.conv.weight, decode_head.aspp_modules.3.depthwise_conv.bn.weight, decode_head.aspp_modules.3.depthwise_conv.bn.bias, decode_head.aspp_modules.3.depthwise_conv.bn.running_mean, decode_head.aspp_modules.3.depthwise_conv.bn.running_var, decode_head.aspp_modules.3.pointwise_conv.conv.weight, decode_head.aspp_modules.3.pointwise_conv.bn.weight, decode_head.aspp_modules.3.pointwise_conv.bn.bias, decode_head.aspp_modules.3.pointwise_conv.bn.running_mean, decode_head.aspp_modules.3.pointwise_conv.bn.running_var, decode_head.c1_bottleneck.conv.weight, decode_head.c1_bottleneck.bn.weight, decode_head.c1_bottleneck.bn.bias, decode_head.c1_bottleneck.bn.running_mean, decode_head.c1_bottleneck.bn.running_var, decode_head.sep_bottleneck.0.depthwise_conv.conv.weight, decode_head.sep_bottleneck.0.depthwise_conv.bn.weight, decode_head.sep_bottleneck.0.depthwise_conv.bn.bias, decode_head.sep_bottleneck.0.depthwise_conv.bn.running_mean, decode_head.sep_bottleneck.0.depthwise_conv.bn.running_var, decode_head.sep_bottleneck.0.pointwise_conv.conv.weight, decode_head.sep_bottleneck.0.pointwise_conv.bn.weight, decode_head.sep_bottleneck.0.pointwise_conv.bn.bias, decode_head.sep_bottleneck.0.pointwise_conv.bn.running_mean, decode_head.sep_bottleneck.0.pointwise_conv.bn.running_var, decode_head.sep_bottleneck.1.depthwise_conv.conv.weight, decode_head.sep_bottleneck.1.depthwise_conv.bn.weight, decode_head.sep_bottleneck.1.depthwise_conv.bn.bias, decode_head.sep_bottleneck.1.depthwise_conv.bn.running_mean, decode_head.sep_bottleneck.1.depthwise_conv.bn.running_var, decode_head.sep_bottleneck.1.pointwise_conv.conv.weight, decode_head.sep_bottleneck.1.pointwise_conv.bn.weight, decode_head.sep_bottleneck.1.pointwise_conv.bn.bias, decode_head.sep_bottleneck.1.pointwise_conv.bn.running_mean, decode_head.sep_bottleneck.1.pointwise_conv.bn.running_var
+
+09/07 11:45:17 - mmengine - INFO - Load checkpoint from checkpoint/deeplabv3_r18-d8_512x1024_80k_cityscapes_20201225_021506-23dffbe2.pth
+/home/teamproject_mmseg/miniconda3/envs/openmmlab/lib/python3.8/site-packages/torch/utils/data/dataloader.py:560: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(_create_warning_msg(
+09/07 11:48:29 - mmengine - INFO - Iter(test) [ 50/500]    eta: 0:28:44  time: 5.1972  data_time: 0.0066  memory: 7239  
+09/07 11:54:29 - mmengine - INFO - Iter(test) [100/500]    eta: 0:36:46  time: 8.5257  data_time: 0.0062  memory: 755  
+09/07 12:03:21 - mmengine - INFO - Iter(test) [150/500]    eta: 0:42:08  time: 11.7607  data_time: 0.0064  memory: 755  
+09/07 12:14:44 - mmengine - INFO - Iter(test) [200/500]    eta: 0:44:09  time: 14.9160  data_time: 0.0064  memory: 755  
+09/07 12:29:08 - mmengine - INFO - Iter(test) [250/500]    eta: 0:43:51  time: 20.5745  data_time: 0.0068  memory: 755  
+09/07 12:50:38 - mmengine - INFO - Iter(test) [300/500]    eta: 0:43:33  time: 27.0296  data_time: 0.0069  memory: 755  
+09/07 13:15:06 - mmengine - INFO - Iter(test) [350/500]    eta: 0:38:29  time: 30.8835  data_time: 0.0072  memory: 755  
+09/07 13:42:25 - mmengine - INFO - Iter(test) [400/500]    eta: 0:29:16  time: 33.9453  data_time: 0.0070  memory: 755  
+09/07 14:19:50 - mmengine - INFO - Iter(test) [450/500]    eta: 0:17:10  time: 59.3334  data_time: 0.0078  memory: 755  
+09/07 15:12:35 - mmengine - INFO - Iter(test) [500/500]    eta: 0:00:00  time: 65.9845  data_time: 0.0079  memory: 755  
+09/07 15:12:35 - mmengine - WARNING - diou got empty `self.results`. Please ensure that the processed results are properly added into `self.results` in `process` method.
+09/07 15:13:34 - mmengine - INFO - Iter(test) [500/500]    Acc: 32.9822  mAccD: 5.2806  mIoUD: 1.7627  mDiceD: 2.6569  mAccI: 17.1374  mIoUI: 12.0950  mDiceI: 13.5576  mAccIQ: 5.0482  mIoUIQ: 2.8775  mDiceIQ: 3.4719  mAccI1: 0.0000  mIoUI1: 0.0000  mDiceI1: 0.0000  mAccC: 5.2825  mIoUC: 3.3273  mDiceC: 3.8401  mAccCQ: 5.2534  mIoUCQ: 2.0210  mDiceCQ: 2.6224  mAccC1: 4.9147  mIoUC1: 0.0278  mDiceC1: 0.0552  data_time: 0.0081  time: 24.8750
