@@ -7,7 +7,7 @@ from mmengine.config import Config, DictAction
 from mmengine.runner import Runner
 
 # from zeus.monitor import ZeusMonitor
-#from .. import projects
+import projects
 
 # import pydevd_pycharm
 # pydevd_pycharm.settrace('134.169.30.162', port=8906, stdoutToServer=True, stderrToServer=True)

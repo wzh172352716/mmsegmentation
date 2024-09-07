@@ -1,5 +1,0 @@
-  File "tools/test.py", line 10
-    import ..projects
-           ^
-srun: error: gpu03: task 0: Exited with exit code 1
-SyntaxError: invalid syntax

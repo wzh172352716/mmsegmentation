@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "tools/test.py", line 10, in <module>
+    import projects
+  File "/home/teamproject_mmseg/work_fast/mmsegmentation-main/projects/__init__.py", line 3, in <module>
+    from .safety_metrics import *
+  File "/home/teamproject_mmseg/work_fast/mmsegmentation-main/projects/safety_metrics/__init__.py", line 2, in <module>
+    from .metrics import PedestrianSizeMetric, PixelSizeRecallMetric,diou
+ImportError: cannot import name 'diou' from 'projects.safety_metrics.metrics' (/home/teamproject_mmseg/work_fast/mmsegmentation-main/projects/safety_metrics/metrics/__init__.py)
+srun: error: gpu05: task 0: Exited with exit code 1

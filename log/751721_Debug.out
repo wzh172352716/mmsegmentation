@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "tools/test.py", line 10, in <module>
-    from .. import projects
-ImportError: attempted relative import with no known parent package
-srun: error: gpu05: task 0: Exited with exit code 1
