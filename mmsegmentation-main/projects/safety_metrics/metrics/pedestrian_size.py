@@ -256,7 +256,6 @@ class diou(BaseMetric):
                  ignore_index=None,  
                  collect_device: str = 'cpu',  
                  prefix: Optional[str] = None):
-        print("AccuracyMetric 已被注册！")  
         super().__init__(collect_device=collect_device, prefix=prefix)
         self.accuracyD = accuracyD
         self.accuracyI = accuracyI
@@ -271,6 +270,7 @@ class diou(BaseMetric):
         self.fn = torch.tensor([])  
         self.active_classes = torch.tensor([], dtype=torch.bool)  
         self.image_file = []  
+
     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
         for data_sample in data_samples:
             pred = data_sample['pred_sem_seg']['data'].squeeze().cpu()  # 获取预测值并移到CPU上
@@ -311,7 +311,8 @@ class diou(BaseMetric):
                 self.fp = torch.cat((self.fp, fp), dim=0)
                 self.fn = torch.cat((self.fn, fn), dim=0)
                 self.active_classes = torch.cat((self.active_classes, active_classes), dim=0)
-                self.image_file.append(image_file_i)
+                self.image_file.append(image_file)
+
     def compute_metrics(self, results: list) -> Dict[str, float]:
         final_results = {}
         if self.accuracyD:
@@ -321,3 +322,129 @@ class diou(BaseMetric):
         if self.accuracyC:
             final_results.update(self.valueC())
         return final_results
+
+    def valueD(self):
+        tp = torch.sum(self.tp, dim=0)
+        fp = torch.sum(self.fp, dim=0)
+        fn = torch.sum(self.fn, dim=0)
+
+        if self.binary:
+            tp = tp[1]
+            fp = fp[1]
+            fn = fn[1]
+
+        Acc = 100 * torch.sum(tp) / torch.sum(tp + fn + 1e-6)
+        mAccD = 100 * torch.mean(tp / (tp + fn + 1e-6))
+        mIoUD = 100 * torch.mean(tp / (tp + fp + fn + 1e-6))
+        mDiceD = 100 * torch.mean(2 * tp / (2 * tp + fp + fn + 1e-6))
+
+        return {"Acc": Acc,
+                "mAccD": mAccD,
+                "mIoUD": mIoUD,
+                "mDiceD": mDiceD}
+
+    def valueI(self):
+        AccIC = self.tp / (self.tp + self.fn + 1e-6)
+        IoUIC = self.tp / (self.tp + self.fp + self.fn + 1e-6)
+        DiceIC = 2 * self.tp / (2 * self.tp + self.fp + self.fn + 1e-6)
+
+        AccIC[~self.active_classes] = 0
+        IoUIC[~self.active_classes] = 0
+        DiceIC[~self.active_classes] = 0
+
+        mAccI = self.reduceI(AccIC)
+        mIoUI = self.reduceI(IoUIC)
+        mDiceI = self.reduceI(DiceIC)
+
+        mAccIQ = mIoUIQ = mDiceIQ = 0
+        for q in range(10, 110, 10):
+            mAccIQ += self.reduceI(AccIC, q)
+            mIoUIQ += self.reduceI(IoUIC, q)
+            mDiceIQ += self.reduceI(DiceIC, q)
+        mAccIQ /= 10
+        mIoUIQ /= 10
+        mDiceIQ /= 10
+
+        mAccIq = self.reduceI(AccIC, self.q)
+        mIoUIq = self.reduceI(IoUIC, self.q)
+        mDiceIq = self.reduceI(DiceIC, self.q)
+
+        return {"mAccI": mAccI,
+                "mIoUI": mIoUI,
+                "mDiceI": mDiceI,
+                "mAccIQ": mAccIQ,
+                "mIoUIQ": mIoUIQ,
+                "mDiceIQ": mDiceIQ,
+                f"mAccI{self.q}": mAccIq,
+                f"mIoUI{self.q}": mIoUIq,
+                f"mDiceI{self.q}": mDiceIq}
+
+    def valueC(self):
+        AccIC = self.tp / (self.tp + self.fn + 1e-6)
+        IoUIC = self.tp / (self.tp + self.fp + self.fn + 1e-6)
+        DiceIC = 2 * self.tp / (2 * self.tp + self.fp + self.fn + 1e-6)
+
+        AccIC[~self.active_classes] = 1e6
+        IoUIC[~self.active_classes] = 1e6
+        DiceIC[~self.active_classes] = 1e6
+
+        mAccC = self.reduceC(AccIC)
+        mIoUC = self.reduceC(IoUIC)
+        mDiceC = self.reduceC(DiceIC)
+
+        mAccCQ = mIoUCQ = mDiceCQ = 0
+        for q in range(10, 110, 10):
+            mAccCQ += self.reduceC(AccIC, q)
+            mIoUCQ += self.reduceC(IoUIC, q)
+            mDiceCQ += self.reduceC(DiceIC, q)
+        mAccCQ /= 10
+        mIoUCQ /= 10
+        mDiceCQ /= 10
+
+        mAccCq = self.reduceC(AccIC, self.q)
+        mIoUCq = self.reduceC(IoUIC, self.q)
+        mDiceCq = self.reduceC(DiceIC, self.q)
+
+        return {"mAccC": mAccC,
+                "mIoUC": mIoUC,
+                "mDiceC": mDiceC,
+                "mAccCQ": mAccCQ,
+                "mIoUCQ": mIoUCQ,
+                "mDiceCQ": mDiceCQ,
+                f"mAccC{self.q}": mAccCq,
+                f"mIoUC{self.q}": mIoUCq,
+                f"mDiceC{self.q}": mDiceCq}
+
+    def reduceI(self, value_matrix, q=None):
+        active_sum = torch.sum(self.active_classes, dim=1)
+        if self.binary:
+            value = value_matrix[:, 1]
+            value[active_sum < 2] = 1
+        else:
+            value = torch.sum(value_matrix, dim=1)
+            value /= active_sum
+
+        if q is None:
+            n = value.size(0)
+        else:
+            n = max(1, int(q / 100 * value.size(0)))
+
+        value = torch.sort(value)[0][:n]
+        value = 100 * torch.mean(value)
+
+        return value
+
+    def reduceC(self, value_matrix, q=None):
+        num_images, num_classes = value_matrix.shape
+        active_sum = torch.sum(self.active_classes, dim=0)
+        if q is not None:
+            active_sum = torch.max(torch.ones(num_classes), (q / 100 * active_sum).to(torch.long))
+
+        indices = torch.arange(num_images).view(-1, 1).expand_as(value_matrix)
+        mask = indices < active_sum
+
+        value_matrix = mask * torch.sort(value_matrix, dim=0)[0]
+        value = torch.sum(value_matrix, dim=0) / active_sum
+        value = 100 * torch.mean(value)
+
+        return value
