@@ -251,7 +251,7 @@ class diou(BaseMetric):
                  accuracyD=True,
                  accuracyI=True,
                  accuracyC=True,
-                 q=1,
+                 q=10,
                  binary=False,
                  num_classes=19,  # for cityscapes
                  ignore_index=None,
@@ -275,21 +275,21 @@ class diou(BaseMetric):
 
     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
         for data_sample in data_samples:
-            pred = data_sample['pred_sem_seg']['data'].squeeze().cpu()  # 获取预测值并移到CPU上
-            label = data_sample['gt_sem_seg']['data'].squeeze().cpu()  # 获取真实标签
-            image_file = data_sample.get('img_path', None)  # 获取图像文件名
+            pred = data_sample['pred_sem_seg']['data'].squeeze().cpu()  
+            label = data_sample['gt_sem_seg']['data'].squeeze().cpu()  
+            image_file = data_sample.get('img_path', None) 
 
             batch_size = pred.size(0)
             pred = pred.view(batch_size, -1)
             label = label.view(batch_size, -1)
             if self.ignore_index is not None:
-                keep_mask = (label != self.ignore_index).to(torch.bool)  # 忽略指定的索引，并确保为布尔张量
+                keep_mask = (label != self.ignore_index).to(torch.bool)
             else:
                 keep_mask = torch.ones_like(label, dtype=torch.bool)
             keep_mask = keep_mask.unsqueeze(1).expand(batch_size, self.num_classes, -1)
 
-            pred = F.one_hot(pred, num_classes=self.num_classes).permute(0, 2, 1)  # 独热编码预测结果
-            label = torch.clamp(label, 0, self.num_classes - 1)  # 将标签值限制在类别范围内
+            pred = F.one_hot(pred, num_classes=self.num_classes).permute(0, 2, 1)  
+            label = torch.clamp(label, 0, self.num_classes - 1) 
             label = F.one_hot(label, num_classes=self.num_classes).permute(0, 2, 1)
 
             for i in range(batch_size):
@@ -300,10 +300,10 @@ class diou(BaseMetric):
                 if label_i.size(1) < 1:
                     continue
 
-                tp = torch.logical_and(pred_i == 1, label_i == 1)  # 真阳性
-                tn = torch.logical_and(pred_i == 0, label_i == 0)  # 真阴性
-                fp = torch.logical_and(pred_i == 1, label_i == 0)  # 假阳性
-                fn = torch.logical_and(pred_i == 0, label_i == 1)  # 假阴性
+                tp = torch.logical_and(pred_i == 1, label_i == 1)
+                tn = torch.logical_and(pred_i == 0, label_i == 0)
+                fp = torch.logical_and(pred_i == 1, label_i == 0)
+                fn = torch.logical_and(pred_i == 0, label_i == 1)
 
                 tp = torch.sum(tp, dim=1).unsqueeze(0)
                 tn = torch.sum(tn, dim=1).unsqueeze(0)
@@ -349,7 +349,7 @@ class diou(BaseMetric):
         Acc = 100 * torch.sum(tp) / (torch.sum(tp + fn) + 1e-6)
         mAccD = 100 * torch.mean(tp / (tp + fn + 1e-6))
         mIoUD = 100 * torch.mean(tp / (tp + fp + fn + 1e-6))
-        mDiceD = 100 * torch.mean(2 * tp / (2 * tp + fp + fn + 1e-6))
+        mDiceD = 100 * torch.mean(2 * tp / (2 * tp + fp + fn + 1e-6)) # Dice
 
         return {"Acc": Acc,
                 "mAccD": mAccD,
@@ -442,6 +442,15 @@ class diou(BaseMetric):
         else:
             n = max(1, int(q / 100 * value.size(0)))
 
+        # 获取排序后的索引
+        sorted_indices = torch.argsort(value)[:n]
+        sorted_value = value[sorted_indices]
+
+        # 输出排序后的索引和对应的图片路径
+        print(f"Indices of worst {q}% samples: {sorted_indices}")
+        for idx in sorted_indices:
+            print(f"Image file: {self.image_file[idx]}, Value: {sorted_value[idx]}")
+        
         value = torch.sort(value)[0][:n]
         value = 100 * torch.mean(value)
 

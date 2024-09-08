@@ -33,7 +33,7 @@ default_hooks = dict(
 default_scope = 'mmseg'
 env_cfg = dict(
     cudnn_benchmark=True,
-    dist_cfg=dict(backend='nccl', port=43403),
+    dist_cfg=dict(backend='nccl', port=47042),
     mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0))
 img_ratios = [
     0.5,
