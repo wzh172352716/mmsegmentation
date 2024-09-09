@@ -442,14 +442,14 @@ class diou(BaseMetric):
         else:
             n = max(1, int(q / 100 * value.size(0)))
 
-        # 获取排序后的索引
-        sorted_indices = torch.argsort(value)[:n]
-        sorted_value = value[sorted_indices]
+        # # 获取排序后的索引
+        # sorted_indices = torch.argsort(value)[:n]
+        # sorted_value = value[sorted_indices]
 
-        # 输出排序后的索引和对应的图片路径
-        print(f"Indices of worst {q}% samples: {sorted_indices}")
-        for idx in sorted_indices:
-            print(f"Image file: {self.image_file[idx]}, Value: {sorted_value[idx]}")
+        # # 输出排序后的索引和对应的图片路径
+        # print(f"Indices of worst {q}% samples: {sorted_indices}")
+        # for idx in sorted_indices:
+        #     print(f"Image file: {self.image_file[idx]}, Value: {sorted_value[idx]}")
         
         value = torch.sort(value)[0][:n]
         value = 100 * torch.mean(value)
