@@ -470,3 +470,122 @@ class diou(BaseMetric):
         value = 100 * torch.mean(value)
 
         return value
+
+@METRICS.register_module()
+class PedestrianDistanceMetric(BaseMetric):
+    def __init__(self,
+                 pedestrian_idx: int = 11,
+                 collect_device: str = 'cpu',
+                 prefix: Optional[str] = None,
+                 fx: float = 2262.52,  # 水平方向焦距
+                 fy: float = 2265.30,  # 垂直方向焦距
+                 image_height: int = 1024,  # 图像的垂直分辨率
+                 known_height: float = 1.7,  # 行人的实际高度
+                 **kwargs) -> None:
+        super().__init__(collect_device=collect_device, prefix=prefix)
+        self.pedestrian_idx = pedestrian_idx
+        self.fx = fx
+        self.fy = fy
+        self.image_height = image_height
+        self.known_height = known_height
+        self.results = []
+
+    def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
+        """
+        处理每批数据样本，提取预测和真实标签，计算每个行人的轮廓高度和距离
+        """
+        for data_sample in data_samples:
+            # 获取预测和真实标签
+            pred_label = data_sample['pred_sem_seg']['data'].squeeze().cpu().numpy()
+            label = data_sample['gt_sem_seg']['data'].squeeze().cpu().numpy()
+            label_pedestrian = np.where(label == self.pedestrian_idx, 255, 0).astype("uint8")
+            pred_label_pedestrian = np.where(pred_label == self.pedestrian_idx, 255, 0).astype("uint8")
+
+            # 获取轮廓
+            ret, thresh = cv2.threshold(label_pedestrian, 127, 255, cv2.THRESH_BINARY)
+            contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            res = self.get_predicted_contours(contours, pred_label_pedestrian)
+
+            # 处理每个轮廓，计算距离
+            for key, value in res.items():
+                if key >= 200 and value["total_num"] > value["recognized_num"]:
+                    basename = osp.splitext(osp.basename(data_sample['img_path']))[0]
+                    print(f"For image {basename} a pedestrian of large size (>=200px) was not predicted!")
+
+                    out = cv2.cvtColor(label_pedestrian, cv2.COLOR_GRAY2RGB)
+                    cv2.drawContours(out, contours, -1, (0, 0, 255), 3)
+
+                    for key, value in res.items():
+                        cv2.drawContours(out, value["contours"], -1, (0, 255, 0), 3)
+
+                    cv2.imwrite(f"debug_{basename}.png", out)
+
+                # 计算每个高度对应的距离
+                distances = []
+                for contour in value['contours']:
+                    h = key  # 轮廓高度
+                    distance = self.calculate_distance_monocular(h)
+                    distances.append(distance)
+                    print(f"检测到的行人高度为 {h} 像素，距离为 {distance:.2f} 米")
+
+                value['distances'] = distances  # 将距离信息添加到结果中
+
+            self.results.append(res)
+
+    def calculate_distance_monocular(self, pixel_height):
+        """
+        基于单目摄像机的行人像素高度计算距离
+        :param pixel_height: 行人的像素高度
+        :return: 估算的距离 (米)
+        """
+        distance = (self.known_height * self.fy * self.image_height) / pixel_height
+        return distance
+
+    def compute_metrics(self, results: list) -> Dict[str, float]:
+        """
+        计算累计的行人检测指标
+        """
+        final_result = {}
+        for result in results:
+            for key, value in result.items():
+                if key not in final_result:
+                    final_result[key] = {"total_num": 0, "recognized_num": 0, "distances": []}
+                final_result[key]["total_num"] += value["total_num"]
+                final_result[key]["recognized_num"] += value["recognized_num"]
+                final_result[key]["distances"].extend(value["distances"])
+
+        # 排序并打印最终结果
+        final_result = collections.OrderedDict(sorted(final_result.items()))
+        print(final_result)
+        return final_result
+
+    def get_contour_height(self, contours):
+        """
+        获取轮廓的高度
+        """
+        heights = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            heights.append(h)
+        return heights
+
+    def get_predicted_contours(self, contours, pred_mask):
+        """
+        获取预测的轮廓，并统计每个轮廓的检测情况
+        """
+        heights = self.get_contour_height(contours)
+        res = {}
+
+        for contour, height in zip(contours, heights):
+            contour_img = np.zeros_like(pred_mask)
+            cv2.drawContours(contour_img, [contour], -1, color=(255), thickness=cv2.FILLED)
+
+            if height not in res:
+                res[height] = {"total_num": 0, "recognized_num": 0, "contours": []}
+            res[height]["total_num"] += 1
+            intersection = cv2.bitwise_and(contour_img, pred_mask)
+            if np.max(intersection) > 0:
+                res[height]["recognized_num"] += 1
+                res[height]["contours"].append(contour)
+
+        return res
