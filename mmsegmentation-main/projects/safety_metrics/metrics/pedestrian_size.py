@@ -538,7 +538,7 @@ class PedestrianDistanceMetric(BaseMetric):
         :param pixel_height: 行人的像素高度
         :return: 估算的距离 (米)
         """
-        distance = (self.known_height * self.fy * self.image_height) / pixel_height
+        distance = (self.known_height * self.fy) / pixel_height
         return distance
 
     def compute_metrics(self, results: list) -> Dict[str, float]:
