@@ -489,6 +489,7 @@ class PedestrianDistanceMetric(BaseMetric):
         self.image_height = image_height
         self.known_height = known_height
         self.results = []
+        self.image_info = []  # 用于存储每张图像的相关信息
 
     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
         """
@@ -498,39 +499,71 @@ class PedestrianDistanceMetric(BaseMetric):
             # 获取预测和真实标签
             pred_label = data_sample['pred_sem_seg']['data'].squeeze().cpu().numpy()
             label = data_sample['gt_sem_seg']['data'].squeeze().cpu().numpy()
+            image_path = data_sample['img_path']  # 获取图像路径
+            image_name = osp.basename(image_path)
+            image = cv2.imread(image_path)  # 读取原始图像
+
+            # 提取行人区域
             label_pedestrian = np.where(label == self.pedestrian_idx, 255, 0).astype("uint8")
             pred_label_pedestrian = np.where(pred_label == self.pedestrian_idx, 255, 0).astype("uint8")
 
-            # 获取轮廓
+            # 获取真实标签中的行人轮廓
             ret, thresh = cv2.threshold(label_pedestrian, 127, 255, cv2.THRESH_BINARY)
-            contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            res = self.get_predicted_contours(contours, pred_label_pedestrian)
+            gt_contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-            # 处理每个轮廓，计算距离
-            for key, value in res.items():
-                if key >= 200 and value["total_num"] > value["recognized_num"]:
-                    basename = osp.splitext(osp.basename(data_sample['img_path']))[0]
-                    print(f"For image {basename} a pedestrian of large size (>=200px) was not predicted!")
+            # 获取预测结果中的行人轮廓
+            ret_pred, thresh_pred = cv2.threshold(pred_label_pedestrian, 127, 255, cv2.THRESH_BINARY)
+            pred_contours, hierarchy_pred = cv2.findContours(thresh_pred, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-                    out = cv2.cvtColor(label_pedestrian, cv2.COLOR_GRAY2RGB)
-                    cv2.drawContours(out, contours, -1, (0, 0, 255), 3)
+            # 存储当前图像的行人高度信息（使用预测轮廓）
+            contour_heights = []
+            contour_distances = []
+            for contour in pred_contours:
+                x, y, w, h = cv2.boundingRect(contour)
+                contour_heights.append(h)
+                distance = self.calculate_distance_monocular(h)
+                contour_distances.append(distance)
 
-                    for key, value in res.items():
-                        cv2.drawContours(out, value["contours"], -1, (0, 255, 0), 3)
+            # 如果存在预测的行人，记录最大和最小高度及对应的距离和轮廓
+            if contour_heights:
+                max_height = max(contour_heights)
+                min_height = min(contour_heights)
+                max_index = contour_heights.index(max_height)
+                min_index = contour_heights.index(min_height)
+                max_distance = contour_distances[max_index]
+                min_distance = contour_distances[min_index]
+                max_contour = pred_contours[max_index]
+                min_contour = pred_contours[min_index]
 
-                    cv2.imwrite(f"debug_{basename}.png", out)
-
-                # 计算每个高度对应的距离
-                distances = []
-                for contour in value['contours']:
-                    h = key  # 轮廓高度
-                    distance = self.calculate_distance_monocular(h)
-                    distances.append(distance)
-                    print(f"检测到的行人高度为 {h} 像素，距离为 {distance:.2f} 米")
-
-                value['distances'] = distances  # 将距离信息添加到结果中
-
-            self.results.append(res)
+                # 存储信息
+                self.image_info.append({
+                    'image_name': image_name,
+                    'image_path': image_path,
+                    'image': image,
+                    'gt_contours': gt_contours,
+                    'pred_contours': pred_contours,
+                    'max_height': max_height,
+                    'min_height': min_height,
+                    'max_distance': max_distance,
+                    'min_distance': min_distance,
+                    'max_contour': max_contour,
+                    'min_contour': min_contour,
+                })
+            else:
+                # 如果没有预测到行人，仍然保存图像信息，以便分析
+                self.image_info.append({
+                    'image_name': image_name,
+                    'image_path': image_path,
+                    'image': image,
+                    'gt_contours': gt_contours,
+                    'pred_contours': [],
+                    'max_height': 0,
+                    'min_height': 0,
+                    'max_distance': 0,
+                    'min_distance': 0,
+                    'max_contour': None,
+                    'min_contour': None,
+                })
 
     def calculate_distance_monocular(self, pixel_height):
         """
@@ -538,26 +571,62 @@ class PedestrianDistanceMetric(BaseMetric):
         :param pixel_height: 行人的像素高度
         :return: 估算的距离 (米)
         """
+        if pixel_height == 0:
+            return float('inf')  # 避免除以零
         distance = (self.known_height * self.fy) / pixel_height
         return distance
 
     def compute_metrics(self, results: list) -> Dict[str, float]:
         """
-        计算累计的行人检测指标
+        计算累计的行人检测指标，并输出指定的结果图像
         """
-        final_result = {}
-        for result in results:
-            for key, value in result.items():
-                if key not in final_result:
-                    final_result[key] = {"total_num": 0, "recognized_num": 0, "distances": []}
-                final_result[key]["total_num"] += value["total_num"]
-                final_result[key]["recognized_num"] += value["recognized_num"]
-                final_result[key]["distances"].extend(value["distances"])
+        # 按照最大高度排序，选取五张具有最大行人像素高度的图像
+        sorted_by_max_height = sorted(self.image_info, key=lambda x: x['max_height'], reverse=True)
+        top_5_max = sorted_by_max_height[:5]
 
-        # 排序并打印最终结果
-        final_result = collections.OrderedDict(sorted(final_result.items()))
-        print(final_result)
-        return final_result
+        # 按照最小高度排序，选取五张具有最小行人像素高度的图像（大于0）
+        sorted_by_min_height = sorted([info for info in self.image_info if info['min_height'] > 0], key=lambda x: x['min_height'])
+        top_5_min = sorted_by_min_height[:5]
+
+        # 合并这十张图像信息
+        selected_images = top_5_max + top_5_min
+
+        # 对于每张图像，绘制真实和预测的行人轮廓以及距离
+        for idx, info in enumerate(selected_images):
+            image = info['image'].copy()
+            image_name = info['image_name']
+
+            # 绘制真实的行人轮廓（红色）
+            if info['gt_contours']:
+                cv2.drawContours(image, info['gt_contours'], -1, (0, 0, 255), 2)
+
+            # 绘制预测的行人轮廓（绿色）
+            if info['pred_contours']:
+                cv2.drawContours(image, info['pred_contours'], -1, (0, 255, 0), 2)
+
+            # 绘制最大和最小预测行人轮廓并标注距离
+            if info['max_contour'] is not None:
+                self.annotate_image(image, [info['max_contour']], [info['max_distance']], (0, 255, 0), 'Max Distance')
+            if info['min_contour'] is not None and info['min_contour'] is not info['max_contour']:
+                self.annotate_image(image, [info['min_contour']], [info['min_distance']], (255, 0, 0), 'Min Distance')
+
+            # 保存结果图像
+            result_image_name = f'result_{idx+1}_{image_name}'
+            cv2.imwrite(result_image_name, image)
+            print(f'Saved annotated image: {result_image_name}')
+
+        return {}  # 返回需要的指标结果
+
+    def annotate_image(self, image, contours, distances, color, label):
+        """
+        在图像上绘制轮廓和标注距离
+        """
+        for contour, distance in zip(contours, distances):
+            if contour is not None:
+                cv2.drawContours(image, [contour], -1, color, 2)
+                x, y, w, h = cv2.boundingRect(contour)
+                cv2.putText(image, f'{label}: {distance:.2f}m', (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
     def get_contour_height(self, contours):
         """
@@ -589,3 +658,431 @@ class PedestrianDistanceMetric(BaseMetric):
                 res[height]["contours"].append(contour)
 
         return res
+# class PedestrianDistanceMetric(BaseMetric):
+#     def __init__(self,
+#                  pedestrian_idx: int = 11,
+#                  collect_device: str = 'cpu',
+#                  prefix: Optional[str] = None,
+#                  fx: float = 2262.52,  # 水平方向焦距
+#                  fy: float = 2265.30,  # 垂直方向焦距
+#                  image_height: int = 1024,  # 图像的垂直分辨率
+#                  known_height: float = 1.7,  # 行人的实际高度
+#                  **kwargs) -> None:
+#         super().__init__(collect_device=collect_device, prefix=prefix)
+#         self.pedestrian_idx = pedestrian_idx
+#         self.fx = fx
+#         self.fy = fy
+#         self.image_height = image_height
+#         self.known_height = known_height
+#         self.results = []
+
+#     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
+#         """
+#         处理每批数据样本，提取预测和真实标签，计算每个行人的轮廓高度和距离
+#         """
+#         for data_sample in data_samples:
+#             # 获取预测和真实标签
+#             pred_label = data_sample['pred_sem_seg']['data'].squeeze().cpu().numpy()
+#             label = data_sample['gt_sem_seg']['data'].squeeze().cpu().numpy()
+#             label_pedestrian = np.where(label == self.pedestrian_idx, 255, 0).astype("uint8")
+#             pred_label_pedestrian = np.where(pred_label == self.pedestrian_idx, 255, 0).astype("uint8")
+
+#             # 获取轮廓
+#             ret, thresh = cv2.threshold(label_pedestrian, 127, 255, cv2.THRESH_BINARY)
+#             contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+#             res = self.get_predicted_contours(contours, pred_label_pedestrian)
+
+#             # 处理每个轮廓，计算距离
+#             for key, value in res.items():
+#                 if key >= 200 and value["total_num"] > value["recognized_num"]:
+#                     basename = osp.splitext(osp.basename(data_sample['img_path']))[0]
+#                     print(f"For image {basename} a pedestrian of large size (>=200px) was not predicted!")
+
+#                     out = cv2.cvtColor(label_pedestrian, cv2.COLOR_GRAY2RGB)
+#                     cv2.drawContours(out, contours, -1, (0, 0, 255), 3)
+
+#                     for key, value in res.items():
+#                         cv2.drawContours(out, value["contours"], -1, (0, 255, 0), 3)
+
+#                     cv2.imwrite(f"debug_{basename}.png", out)
+
+#                 # 计算每个高度对应的距离
+#                 distances = []
+#                 for contour in value['contours']:
+#                     h = key  # 轮廓高度
+#                     distance = self.calculate_distance_monocular(h)
+#                     distances.append(distance)
+#                     print(f"检测到的行人高度为 {h} 像素，距离为 {distance:.2f} 米")
+
+#                 value['distances'] = distances  # 将距离信息添加到结果中
+
+#             self.results.append(res)
+
+#     def calculate_distance_monocular(self, pixel_height):
+#         """
+#         基于单目摄像机的行人像素高度计算距离
+#         :param pixel_height: 行人的像素高度
+#         :return: 估算的距离 (米)
+#         """
+#         distance = (self.known_height * self.fy) / pixel_height
+#         return distance
+
+#     def compute_metrics(self, results: list) -> Dict[str, float]:
+#         """
+#         计算累计的行人检测指标
+#         """
+#         final_result = {}
+#         for result in results:
+#             for key, value in result.items():
+#                 if key not in final_result:
+#                     final_result[key] = {"total_num": 0, "recognized_num": 0, "distances": []}
+#                 final_result[key]["total_num"] += value["total_num"]
+#                 final_result[key]["recognized_num"] += value["recognized_num"]
+#                 final_result[key]["distances"].extend(value["distances"])
+
+#         # 排序并打印最终结果
+#         final_result = collections.OrderedDict(sorted(final_result.items()))
+#         print(final_result)
+#         return final_result
+
+#     def get_contour_height(self, contours):
+#         """
+#         获取轮廓的高度
+#         """
+#         heights = []
+#         for contour in contours:
+#             x, y, w, h = cv2.boundingRect(contour)
+#             heights.append(h)
+#         return heights
+
+#     def get_predicted_contours(self, contours, pred_mask):
+#         """
+#         获取预测的轮廓，并统计每个轮廓的检测情况
+#         """
+#         heights = self.get_contour_height(contours)
+#         res = {}
+
+#         for contour, height in zip(contours, heights):
+#             contour_img = np.zeros_like(pred_mask)
+#             cv2.drawContours(contour_img, [contour], -1, color=(255), thickness=cv2.FILLED)
+
+#             if height not in res:
+#                 res[height] = {"total_num": 0, "recognized_num": 0, "contours": []}
+#             res[height]["total_num"] += 1
+#             intersection = cv2.bitwise_and(contour_img, pred_mask)
+#             if np.max(intersection) > 0:
+#                 res[height]["recognized_num"] += 1
+#                 res[height]["contours"].append(contour)
+
+#         return res
+
+@METRICS.register_module()
+class WorstPedestrain(BaseMetric):
+    def __init__(self,
+                 accuracyD=True,
+                 accuracyI=True,
+                 accuracyC=True,
+                 q=10,
+                 binary=False,
+                 num_classes=19,  # for Cityscapes
+                 pedestrian_class_index=11,  # 行人类别的索引
+                 ignore_index=None,
+                 collect_device: str = 'cpu',
+                 prefix: Optional[str] = None,
+                 **kwargs) -> None:
+        super().__init__(collect_device=collect_device, prefix=prefix)
+        self.accuracyD = accuracyD
+        self.accuracyI = accuracyI
+        self.accuracyC = accuracyC
+        self.q = q
+        self.binary = binary
+        self.num_classes = num_classes
+        self.pedestrian_class_index = pedestrian_class_index  # 行人类别索引
+        self.ignore_index = ignore_index
+        self.tp = torch.tensor([], device=collect_device)
+        self.tn = torch.tensor([], device=collect_device)
+        self.fp = torch.tensor([], device=collect_device)
+        self.fn = torch.tensor([], device=collect_device)
+        self.active_classes = torch.tensor([], dtype=torch.bool, device=collect_device)
+        self.image_file = []
+        self.contains_pedestrian = []  # 记录每个样本是否包含行人
+
+    def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
+        for data_sample in data_samples:
+            pred = data_sample['pred_sem_seg']['data'].squeeze().cpu()
+            label = data_sample['gt_sem_seg']['data'].squeeze().cpu()
+            image_file = data_sample.get('img_path', None)
+
+            batch_size = pred.size(0)
+            pred = pred.view(batch_size, -1)
+            label = label.view(batch_size, -1)
+            if self.ignore_index is not None:
+                keep_mask = (label != self.ignore_index).to(torch.bool)
+            else:
+                keep_mask = torch.ones_like(label, dtype=torch.bool)
+            keep_mask = keep_mask.view(batch_size, -1)
+
+            # 将标签值限制在有效范围内
+            label = torch.clamp(label, 0, self.num_classes - 1)
+
+            # 将预测和标签转换为独热编码
+            pred = F.one_hot(pred, num_classes=self.num_classes)
+            label = F.one_hot(label, num_classes=self.num_classes)
+
+            # 转置张量以匹配形状 [batch_size, num_classes, N]
+            pred = pred.permute(0, 2, 1)
+            label = label.permute(0, 2, 1)
+
+            for i in range(batch_size):
+                # 对当前样本应用keep_mask
+                keep_mask_i = keep_mask[i, :]
+                pred_i = pred[i, :, keep_mask_i]  # [num_classes, valid_pixels]
+                label_i = label[i, :, keep_mask_i]  # [num_classes, valid_pixels]
+
+                if label_i.size(1) < 1:
+                    continue
+
+                # 计算TP、FP、FN、TN
+                tp = (pred_i == 1) & (label_i == 1)
+                tn = (pred_i == 0) & (label_i == 0)
+                fp = (pred_i == 1) & (label_i == 0)
+                fn = (pred_i == 0) & (label_i == 1)
+
+                tp = tp.sum(dim=1).unsqueeze(0)  # [1, num_classes]
+                tn = tn.sum(dim=1).unsqueeze(0)
+                fp = fp.sum(dim=1).unsqueeze(0)
+                fn = fn.sum(dim=1).unsqueeze(0)
+
+                # 确定在当前样本中激活的类别
+                if self.binary:
+                    mask = (pred_i + label_i).amax(dim=1) > 0.5
+                else:
+                    mask = label_i.amax(dim=1) > 0.5
+                mask = mask.unsqueeze(0)
+                active_classes = torch.zeros(1, self.num_classes, dtype=torch.bool)
+                active_classes[0] = mask
+
+                # 检查样本是否包含行人类别
+                contains_pedestrian = (label_i[self.pedestrian_class_index] > 0).any().item()
+                self.contains_pedestrian.append(contains_pedestrian)
+
+                # 收集指标
+                self.tp = torch.cat((self.tp, tp), dim=0)
+                self.tn = torch.cat((self.tn, tn), dim=0)
+                self.fp = torch.cat((self.fp, fp), dim=0)
+                self.fn = torch.cat((self.fn, fn), dim=0)
+                self.active_classes = torch.cat((self.active_classes, active_classes), dim=0)
+                self.image_file.append(image_file)
+
+    def compute_metrics(self, results: list) -> Dict[str, float]:
+        final_results = {}
+        if self.accuracyD:
+            final_results.update(self.valueD())
+        if self.accuracyI:
+            final_results.update(self.valueI())
+        if self.accuracyC:
+            final_results.update(self.valueC())
+        return final_results
+
+    def valueD(self):
+        tp = torch.sum(self.tp, dim=0)
+        fp = torch.sum(self.fp, dim=0)
+        fn = torch.sum(self.fn, dim=0)
+
+        # 计算行人类别的指标
+        tp_pedestrian = tp[self.pedestrian_class_index]
+        fp_pedestrian = fp[self.pedestrian_class_index]
+        fn_pedestrian = fn[self.pedestrian_class_index]
+
+        IoU_pedestrian = tp_pedestrian / (tp_pedestrian + fp_pedestrian + fn_pedestrian + 1e-6)
+        mIoU_pedestrian = 100 * IoU_pedestrian
+
+        # 计算整体指标（可选）
+        if self.binary:
+            tp = tp[1]
+            fp = fp[1]
+            fn = fn[1]
+
+        Acc = 100 * torch.sum(tp) / (torch.sum(tp + fn) + 1e-6)
+        mAccD = 100 * torch.mean(tp / (tp + fn + 1e-6))
+        mIoUD = 100 * torch.mean(tp / (tp + fp + fn + 1e-6))
+        mDiceD = 100 * torch.mean(2 * tp / (2 * tp + fp + fn + 1e-6))  # Dice
+
+        return {"Acc": Acc,
+                "mAccD": mAccD,
+                "mIoUD": mIoUD,
+                "mDiceD": mDiceD,
+                "mIoU_pedestrian": mIoU_pedestrian}
+
+    def valueI(self):
+        AccIC = self.tp / (self.tp + self.fn + 1e-6)
+        IoUIC = self.tp / (self.tp + self.fp + self.fn + 1e-6)
+        DiceIC = 2 * self.tp / (2 * self.tp + self.fp + self.fn + 1e-6)
+
+        AccIC[~self.active_classes] = 0
+        IoUIC[~self.active_classes] = 0
+        DiceIC[~self.active_classes] = 0
+
+        # 提取行人类别的指标
+        pedestrian_class_index = self.pedestrian_class_index
+        Acc_pedestrian = AccIC[:, pedestrian_class_index]
+        IoU_pedestrian = IoUIC[:, pedestrian_class_index]
+        Dice_pedestrian = DiceIC[:, pedestrian_class_index]
+
+        # 仅考虑包含行人类别的样本
+        active_pedestrian = self.active_classes[:, pedestrian_class_index]
+        Acc_pedestrian = Acc_pedestrian[active_pedestrian]
+        IoU_pedestrian = IoU_pedestrian[active_pedestrian]
+        Dice_pedestrian = Dice_pedestrian[active_pedestrian]
+
+        # 计算行人类别的平均指标
+        if len(IoU_pedestrian) > 0:
+            mAccI_pedestrian = 100 * torch.mean(Acc_pedestrian)
+            mIoUI_pedestrian = 100 * torch.mean(IoU_pedestrian)
+            mDiceI_pedestrian = 100 * torch.mean(Dice_pedestrian)
+        else:
+            mAccI_pedestrian = mIoUI_pedestrian = mDiceI_pedestrian = 0.0
+
+        # 计算整体指标
+        mAccI = self.reduceI(AccIC)
+        mIoUI = self.reduceI(IoUIC)
+        mDiceI = self.reduceI(DiceIC)
+
+        mAccIQ = mIoUIQ = mDiceIQ = 0
+        for q in range(10, 110, 10):
+            mAccIQ += self.reduceI(AccIC, q)
+            mIoUIQ += self.reduceI(IoUIC, q)
+            mDiceIQ += self.reduceI(DiceIC, q)
+        mAccIQ /= 10
+        mIoUIQ /= 10
+        mDiceIQ /= 10
+
+        mAccIq = self.reduceI(AccIC, self.q)
+        mIoUIq = self.reduceI(IoUIC, self.q)
+        mDiceIq = self.reduceI(DiceIC, self.q)
+
+        return {"mAccI": mAccI,
+                "mIoUI": mIoUI,
+                "mDiceI": mDiceI,
+                "mAccIQ": mAccIQ,
+                "mIoUIQ": mIoUIQ,
+                "mDiceIQ": mDiceIQ,
+                f"mAccI{self.q}": mAccIq,
+                f"mIoUI{self.q}": mIoUIq,
+                f"mDiceI{self.q}": mDiceIq,
+                "mAccI_pedestrian": mAccI_pedestrian,
+                "mIoUI_pedestrian": mIoUI_pedestrian,
+                "mDiceI_pedestrian": mDiceI_pedestrian}
+
+    def valueC(self):
+        AccIC = self.tp / (self.tp + self.fn + 1e-6)
+        IoUIC = self.tp / (self.tp + self.fp + self.fn + 1e-6)
+        DiceIC = 2 * self.tp / (2 * self.tp + self.fp + self.fn + 1e-6)
+
+        AccIC[~self.active_classes] = 1e6
+        IoUIC[~self.active_classes] = 1e6
+        DiceIC[~self.active_classes] = 1e6
+
+        # 提取行人类别的指标
+        pedestrian_class_index = self.pedestrian_class_index
+        Acc_pedestrian = AccIC[:, pedestrian_class_index]
+        IoU_pedestrian = IoUIC[:, pedestrian_class_index]
+        Dice_pedestrian = DiceIC[:, pedestrian_class_index]
+
+        # 仅考虑包含行人类别的样本
+        active_pedestrian = self.active_classes[:, pedestrian_class_index]
+        Acc_pedestrian = Acc_pedestrian[active_pedestrian]
+        IoU_pedestrian = IoU_pedestrian[active_pedestrian]
+        Dice_pedestrian = Dice_pedestrian[active_pedestrian]
+
+        # 计算行人类别的平均指标
+        if len(IoU_pedestrian) > 0:
+            mAccC_pedestrian = 100 * torch.mean(Acc_pedestrian)
+            mIoUC_pedestrian = 100 * torch.mean(IoU_pedestrian)
+            mDiceC_pedestrian = 100 * torch.mean(Dice_pedestrian)
+        else:
+            mAccC_pedestrian = mIoUC_pedestrian = mDiceC_pedestrian = 0.0
+
+        # 计算整体指标
+        mAccC = self.reduceC(AccIC)
+        mIoUC = self.reduceC(IoUIC)
+        mDiceC = self.reduceC(DiceIC)
+
+        mAccCQ = mIoUCQ = mDiceCQ = 0
+        for q in range(10, 110, 10):
+            mAccCQ += self.reduceC(AccIC, q)
+            mIoUCQ += self.reduceC(IoUIC, q)
+            mDiceCQ += self.reduceC(DiceIC, q)
+        mAccCQ /= 10
+        mIoUCQ /= 10
+        mDiceCQ /= 10
+
+        mAccCq = self.reduceC(AccIC, self.q)
+        mIoUCq = self.reduceC(IoUIC, self.q)
+        mDiceCq = self.reduceC(DiceIC, self.q)
+
+        return {"mAccC": mAccC,
+                "mIoUC": mIoUC,
+                "mDiceC": mDiceC,
+                "mAccCQ": mAccCQ,
+                "mIoUCQ": mIoUCQ,
+                "mDiceCQ": mDiceCQ,
+                f"mAccC{self.q}": mAccCq,
+                f"mIoUC{self.q}": mIoUCq,
+                f"mDiceC{self.q}": mDiceCq,
+                "mAccC_pedestrian": mAccC_pedestrian,
+                "mIoUC_pedestrian": mIoUC_pedestrian,
+                "mDiceC_pedestrian": mDiceC_pedestrian}
+
+    def reduceI(self, value_matrix, q=None):
+        active_sum = torch.sum(self.active_classes, dim=1)
+        if self.binary:
+            value = value_matrix[:, 1]
+            value[active_sum < 2] = 1
+        else:
+            value = torch.sum(value_matrix, dim=1) / (active_sum + 1e-6)
+
+        pedestrian_class_index = self.pedestrian_class_index
+
+        # 转换为布尔张量，标记每个图像是否包含行人
+        contains_pedestrian = torch.tensor(self.contains_pedestrian, dtype=torch.bool, device=value.device)
+        # 判断模型是否在该图像中预测了行人类别
+        predicted_pedestrian = (self.tp[:, pedestrian_class_index] + self.fp[:, pedestrian_class_index]) > 0
+
+        # 筛选有效的样本（实际包含行人或模型预测了行人）
+        valid_indices = contains_pedestrian | predicted_pedestrian
+
+        # 过滤有效样本的值
+        value = value[valid_indices]
+        if value.numel() == 0:
+            return 0.0  # 无有效样本可计算
+
+        # 计算需要选取的最差样本数量n
+        if q is None:
+            n = value.size(0)
+        else:
+            n = max(1, int(q / 100 * value.size(0)))
+
+        # 对值进行排序，选取最差的n个样本
+        sorted_value, sorted_indices = torch.sort(value)
+        value = sorted_value[:n]
+
+        # 计算最差n个样本的平均值
+        value = 100 * torch.mean(value)
+
+        return value
+
+    def reduceC(self, value_matrix, q=None):
+        num_images, num_classes = value_matrix.shape
+        active_sum = torch.sum(self.active_classes, dim=0)
+        if q is not None:
+            active_sum = torch.max(torch.ones(num_classes), (q / 100 * active_sum).to(torch.long))
+
+        indices = torch.arange(num_images).view(-1, 1).expand_as(value_matrix)
+        mask = indices < active_sum
+
+        value_matrix = mask * torch.sort(value_matrix, dim=0)[0]
+        value = torch.sum(value_matrix, dim=0) / active_sum
+        value = 100 * torch.mean(value)
+
+        return value
