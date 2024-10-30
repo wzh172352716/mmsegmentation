@@ -658,123 +658,6 @@ class PedestrianDistanceMetric(BaseMetric):
                 res[height]["contours"].append(contour)
 
         return res
-# class PedestrianDistanceMetric(BaseMetric):
-#     def __init__(self,
-#                  pedestrian_idx: int = 11,
-#                  collect_device: str = 'cpu',
-#                  prefix: Optional[str] = None,
-#                  fx: float = 2262.52,  # 水平方向焦距
-#                  fy: float = 2265.30,  # 垂直方向焦距
-#                  image_height: int = 1024,  # 图像的垂直分辨率
-#                  known_height: float = 1.7,  # 行人的实际高度
-#                  **kwargs) -> None:
-#         super().__init__(collect_device=collect_device, prefix=prefix)
-#         self.pedestrian_idx = pedestrian_idx
-#         self.fx = fx
-#         self.fy = fy
-#         self.image_height = image_height
-#         self.known_height = known_height
-#         self.results = []
-
-#     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
-#         """
-#         处理每批数据样本，提取预测和真实标签，计算每个行人的轮廓高度和距离
-#         """
-#         for data_sample in data_samples:
-#             # 获取预测和真实标签
-#             pred_label = data_sample['pred_sem_seg']['data'].squeeze().cpu().numpy()
-#             label = data_sample['gt_sem_seg']['data'].squeeze().cpu().numpy()
-#             label_pedestrian = np.where(label == self.pedestrian_idx, 255, 0).astype("uint8")
-#             pred_label_pedestrian = np.where(pred_label == self.pedestrian_idx, 255, 0).astype("uint8")
-
-#             # 获取轮廓
-#             ret, thresh = cv2.threshold(label_pedestrian, 127, 255, cv2.THRESH_BINARY)
-#             contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-#             res = self.get_predicted_contours(contours, pred_label_pedestrian)
-
-#             # 处理每个轮廓，计算距离
-#             for key, value in res.items():
-#                 if key >= 200 and value["total_num"] > value["recognized_num"]:
-#                     basename = osp.splitext(osp.basename(data_sample['img_path']))[0]
-#                     print(f"For image {basename} a pedestrian of large size (>=200px) was not predicted!")
-
-#                     out = cv2.cvtColor(label_pedestrian, cv2.COLOR_GRAY2RGB)
-#                     cv2.drawContours(out, contours, -1, (0, 0, 255), 3)
-
-#                     for key, value in res.items():
-#                         cv2.drawContours(out, value["contours"], -1, (0, 255, 0), 3)
-
-#                     cv2.imwrite(f"debug_{basename}.png", out)
-
-#                 # 计算每个高度对应的距离
-#                 distances = []
-#                 for contour in value['contours']:
-#                     h = key  # 轮廓高度
-#                     distance = self.calculate_distance_monocular(h)
-#                     distances.append(distance)
-#                     print(f"检测到的行人高度为 {h} 像素，距离为 {distance:.2f} 米")
-
-#                 value['distances'] = distances  # 将距离信息添加到结果中
-
-#             self.results.append(res)
-
-#     def calculate_distance_monocular(self, pixel_height):
-#         """
-#         基于单目摄像机的行人像素高度计算距离
-#         :param pixel_height: 行人的像素高度
-#         :return: 估算的距离 (米)
-#         """
-#         distance = (self.known_height * self.fy) / pixel_height
-#         return distance
-
-#     def compute_metrics(self, results: list) -> Dict[str, float]:
-#         """
-#         计算累计的行人检测指标
-#         """
-#         final_result = {}
-#         for result in results:
-#             for key, value in result.items():
-#                 if key not in final_result:
-#                     final_result[key] = {"total_num": 0, "recognized_num": 0, "distances": []}
-#                 final_result[key]["total_num"] += value["total_num"]
-#                 final_result[key]["recognized_num"] += value["recognized_num"]
-#                 final_result[key]["distances"].extend(value["distances"])
-
-#         # 排序并打印最终结果
-#         final_result = collections.OrderedDict(sorted(final_result.items()))
-#         print(final_result)
-#         return final_result
-
-#     def get_contour_height(self, contours):
-#         """
-#         获取轮廓的高度
-#         """
-#         heights = []
-#         for contour in contours:
-#             x, y, w, h = cv2.boundingRect(contour)
-#             heights.append(h)
-#         return heights
-
-#     def get_predicted_contours(self, contours, pred_mask):
-#         """
-#         获取预测的轮廓，并统计每个轮廓的检测情况
-#         """
-#         heights = self.get_contour_height(contours)
-#         res = {}
-
-#         for contour, height in zip(contours, heights):
-#             contour_img = np.zeros_like(pred_mask)
-#             cv2.drawContours(contour_img, [contour], -1, color=(255), thickness=cv2.FILLED)
-
-#             if height not in res:
-#                 res[height] = {"total_num": 0, "recognized_num": 0, "contours": []}
-#             res[height]["total_num"] += 1
-#             intersection = cv2.bitwise_and(contour_img, pred_mask)
-#             if np.max(intersection) > 0:
-#                 res[height]["recognized_num"] += 1
-#                 res[height]["contours"].append(contour)
-
-#         return res
 
 @METRICS.register_module()
 class WorstPedestrain(BaseMetric):
@@ -806,12 +689,20 @@ class WorstPedestrain(BaseMetric):
         self.active_classes = torch.tensor([], dtype=torch.bool, device=collect_device)
         self.image_file = []
         self.contains_pedestrian = []  # 记录每个样本是否包含行人
+        # 新增以下列表用于存储每个样本的预测和真实标签
+        self.predictions = []
+        self.labels = []    
 
     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
         for data_sample in data_samples:
             pred = data_sample['pred_sem_seg']['data'].squeeze().cpu()
             label = data_sample['gt_sem_seg']['data'].squeeze().cpu()
             image_file = data_sample.get('img_path', None)
+
+            # 保存原始预测和标签，用于后续保存图像
+            self.predictions.append(pred.numpy())
+            self.labels.append(label.numpy())
+            self.image_file.append(image_file)
 
             batch_size = pred.size(0)
             pred = pred.view(batch_size, -1)
@@ -882,6 +773,8 @@ class WorstPedestrain(BaseMetric):
             final_results.update(self.valueI())
         if self.accuracyC:
             final_results.update(self.valueC())
+        # 计算并保存最差的 q% 样本
+        self.save_worst_samples()
         return final_results
 
     def valueD(self):
@@ -960,7 +853,7 @@ class WorstPedestrain(BaseMetric):
         mAccIq = self.reduceI(AccIC, self.q)
         mIoUIq = self.reduceI(IoUIC, self.q)
         mDiceIq = self.reduceI(DiceIC, self.q)
-
+        mIoUI_pedestrian_q = self.reduceI_class(IoUIC, self.pedestrian_class_index, q=self.q)
         return {"mAccI": mAccI,
                 "mIoUI": mIoUI,
                 "mDiceI": mDiceI,
@@ -972,7 +865,9 @@ class WorstPedestrain(BaseMetric):
                 f"mDiceI{self.q}": mDiceIq,
                 "mAccI_pedestrian": mAccI_pedestrian,
                 "mIoUI_pedestrian": mIoUI_pedestrian,
-                "mDiceI_pedestrian": mDiceI_pedestrian}
+                "mDiceI_pedestrian": mDiceI_pedestrian,
+                f"mIoUI_pedestrian_{self.q}": mIoUI_pedestrian_q
+                }
 
     def valueC(self):
         AccIC = self.tp / (self.tp + self.fn + 1e-6)
@@ -1086,3 +981,110 @@ class WorstPedestrain(BaseMetric):
         value = 100 * torch.mean(value)
 
         return value
+
+    def reduceI_class(self, value_matrix, class_index, q=None):
+        # 提取指定类别的指标
+        value = value_matrix[:, class_index]
+
+        # 转换为布尔张量，标记每个图像是否包含该类别
+        active_class = self.active_classes[:, class_index]
+
+        # 筛选有效的样本（实际包含该类别的样本）
+        value = value[active_class]
+        if value.numel() == 0:
+            return 0.0  # 无有效样本可计算
+
+        # 计算需要选取的最差样本数量 n
+        if q is None:
+            n = value.size(0)
+        else:
+            n = max(1, int(q / 100 * value.size(0)))
+
+        # 对值进行排序，选取最差的 n 个样本
+        sorted_value, sorted_indices = torch.sort(value)
+        value = sorted_value[:n]
+
+        # 计算最差 n 个样本的平均值
+        value = 100 * torch.mean(value)
+        return value
+
+    def save_worst_samples(self):
+        # 确保保存结果的文件夹存在
+        save_dir = 'worstresults'
+        os.makedirs(save_dir, exist_ok=True)
+
+        # 计算每个样本的行人类别 IoU
+        IoUIC = self.tp / (self.tp + self.fp + self.fn + 1e-6)
+        pedestrian_class_index = self.pedestrian_class_index
+        IoU_pedestrian = IoUIC[:, pedestrian_class_index]
+
+        # 转换为 CPU numpy 数组
+        IoU_pedestrian = IoU_pedestrian.cpu().numpy()
+        contains_pedestrian = np.array(self.contains_pedestrian)
+
+        # 仅考虑包含行人类别的样本
+        valid_indices = np.where(contains_pedestrian)[0]
+        if valid_indices.size == 0:
+            print("No samples contain the pedestrian class.")
+            return
+
+        IoU_pedestrian = IoU_pedestrian[valid_indices]
+        image_files = [self.image_file[i] for i in valid_indices]
+        predictions = [self.predictions[i] for i in valid_indices]
+        labels = [self.labels[i] for i in valid_indices]
+
+        # 计算需要选取的最差样本数量 n
+        q = self.q
+        n = max(1, int(q / 100 * len(IoU_pedestrian)))
+
+        # 对 IoU 值进行排序，选取最差的 n 个样本
+        sorted_indices = np.argsort(IoU_pedestrian)
+        worst_indices = sorted_indices[:n]
+
+        # 保存最差的样本
+        for idx in worst_indices:
+            image_file = image_files[idx]
+            pred = predictions[idx]
+            label = labels[idx]
+            IoU_value = IoU_pedestrian[idx]
+
+            # 读取原始图像
+            if image_file is not None and os.path.exists(image_file):
+                image = cv2.imread(image_file)
+            else:
+                print(f"Image file {image_file} not found.")
+                continue
+
+            # 创建彩色的预测结果和真实标签
+            pred_color = self.colorize_mask(pred)
+            label_color = self.colorize_mask(label)
+
+            # 叠加预测结果和真实标签到原始图像
+            overlay_pred = cv2.addWeighted(image, 0.6, pred_color, 0.4, 0)
+            overlay_label = cv2.addWeighted(image, 0.6, label_color, 0.4, 0)
+
+            # 合并显示
+            combined_image = np.hstack((overlay_pred, overlay_label))
+
+            # 在图像上标注 IoU 值
+            cv2.putText(combined_image, f"IoU: {IoU_value:.2f}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+            # 保存图像
+            basename = os.path.basename(image_file)
+            save_path = os.path.join(save_dir, f"worst_{basename}")
+            cv2.imwrite(save_path, combined_image)
+            print(f"Saved worst sample image: {save_path}")
+    
+    def colorize_mask(self, mask):
+        palette = self.get_palette(self.num_classes)
+        color_mask = np.zeros((mask.shape[0], mask.shape[1], 3), dtype=np.uint8)
+        for label_index in range(self.num_classes):
+            color = palette[label_index]
+            color_mask[mask == label_index] = color
+        return color_mask
+    def get_palette(self, num_classes):
+        palette = np.zeros((num_classes, 3), dtype=np.uint8)
+        for i in range(num_classes):
+            palette[i] = [i * (255 // num_classes), 255 - i * (255 // num_classes), (i * 37) % 255]
+        return palette
