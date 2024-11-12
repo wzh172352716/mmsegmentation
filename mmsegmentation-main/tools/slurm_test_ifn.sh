@@ -10,7 +10,7 @@
 #SBATCH --ntasks-per-node=1
 
 #SBATCH --job-name=hadamardTest
-#SBATCH --output=/home/teamproject_mmseg/work_fast/log/%j_Debug.out
+#SBATCH --output=/home/teamproject_mmseg/work_fast/mmsegmentation/mmsegmentation-main/log/%j_Debug.out
 
 ##DEBUG -----
 ##SBATCH --partition=debug
@@ -23,7 +23,7 @@
 
 ##module load comp/gcc/11.2.0
 ##module load anaconda
-source activate openmmlab
+source activate openmmlab_env
 # conda activate openmmlab
 port=$(comm -23 <(seq 20000 65535 | sort) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n 1)
 

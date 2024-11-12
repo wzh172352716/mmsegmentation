@@ -23,7 +23,7 @@
 
 # Load modules
 module load comp/gcc/11.2.0
-source activate openmmlab
+source activate openmmlab_env
 
 # Extra output
 nvidia-smi

@@ -1,4 +1,4 @@
-name: openmmlab
+name: openmmlab_env
 channels:
   - pytorch
   - nvidia
@@ -12,7 +12,7 @@ dependencies:
   - certifi=2023.5.7=py38h06a4308_0
   - cffi=1.15.0=py38hd667e15_1
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
-  - cryptography=41.0.1=py38h774aba0_0
+  #- cryptography=41.0.1=py38h774aba0_0
   - cuda-cudart=11.7.99=0
   - cuda-cupti=11.7.101=0
   - cuda-libraries=11.7.1=0
@@ -122,7 +122,7 @@ dependencies:
     - matplotlib==3.7.2
     - mdurl==0.1.2
     - mmcls==0.25.0
-    - mmcv==2.0.1
+    #- mmcv==2.0.1
     - mmdet==3.1.0
     - mmengine==0.8.1
     - mmpretrain==1.0.0
@@ -130,9 +130,9 @@ dependencies:
     - model-index==0.1.11
     - modelindex==0.0.2
     - motmetrics==1.4.0
-    - nvidia-dlprof==1.8.0
-    - nvidia-nsys-cli==2021.3.2.12
-    - nvidia-pyindex==1.0.9
+    #- nvidia-dlprof==1.8.0
+    #- nvidia-nsys-cli==2021.3.2.12
+    #- nvidia-pyindex==1.0.9
     - opencv-python==4.8.0.74
     - opendatalab==0.0.9
     - openmim==0.3.9
