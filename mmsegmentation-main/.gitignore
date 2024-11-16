@@ -27,6 +27,8 @@ MANIFEST
 log/
 checkpoint/
 data/
+missed_pedestrian_images/
+high_lane_intersection_images/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -121,3 +123,4 @@ mmseg/.mim
 
 # Pytorch
 *.pth
+

@@ -15,6 +15,16 @@ from mmseg.utils import datafrombytes
 
 import torch
 import torch.nn.functional as F  
+
+import shutil
+from mmengine.logging import MMLogger
+import os
+import json
+
+def mkdir_or_exist(dir_name):
+    """如果目录不存在，则创建该目录"""
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
 # sbatch tools/slurm_test_ifn.sh configs/segformer/segformer_mit-b0_8xb1-160k_acdc-512x512.py /beegfs/work/bartels/mmsegmentation/downloaded_ckpts/segformer/segformer_mit-b0_8xb1-160k_acdc-512x512.py.pth test_evaluator.type="PedestrianSizeMetric"
 
 @METRICS.register_module()
@@ -661,6 +671,8 @@ class PedestrianDistanceMetric(BaseMetric):
 
 @METRICS.register_module()
 class WorstPedestrain(BaseMetric):
+
+
     def __init__(self,
                  accuracyD=True,
                  accuracyI=True,
@@ -1088,3 +1100,600 @@ class WorstPedestrain(BaseMetric):
         for i in range(num_classes):
             palette[i] = [i * (255 // num_classes), 255 - i * (255 // num_classes), (i * 37) % 255]
         return palette
+    
+
+@METRICS.register_module()
+class LaneSegmentationMetric(BaseMetric):
+    def __init__(self,
+                 lane_idx: int = 0,  # 车道类标签索引
+                 pedestrian_idx: int = 11,  # 行人类标签索引
+                 min_area_threshold: int = 100,  # 最小车道面积阈值
+                 collect_device: str = 'cpu',
+                 prefix: Optional[str] = None,
+                 output_dir: Optional[str] = './high_lane_intersection_images',
+                 fx: float = 2262.52,  # 水平方向焦距
+                 fy: float = 2265.30,  # 垂直方向焦距
+                 known_height: float = 1.7,  # 行人的实际高度
+                 min_width: int = 10,  # 行人最小宽度（像素）
+                 min_height: int = 10,  # 行人最小高度（像素）
+                 **kwargs) -> None:
+        
+        super().__init__(collect_device=collect_device, prefix=prefix)
+        
+        # 行人和车道的索引、阈值
+        self.lane_idx = lane_idx
+        self.pedestrian_idx = pedestrian_idx
+        self.min_area_threshold = min_area_threshold
+        
+        # 图像输出参数
+        self.output_dir = osp.abspath(output_dir) if output_dir else None
+        self.output_orig_dir = osp.join(self.output_dir, 'originals') if self.output_dir else None
+        self.output_visual_dir = osp.join(self.output_dir, 'visualized') if self.output_dir else None
+        if self.output_dir:
+            mkdir_or_exist(self.output_dir)
+            mkdir_or_exist(self.output_orig_dir)
+            mkdir_or_exist(self.output_visual_dir)
+
+        # 保存文件路径和数量的控制
+        self.saved_image_paths = []
+        self.max_images_to_save = 100  # 将图片保存数量限制改为 100
+        
+        # 距离计算参数
+        self.fx = fx
+        self.fy = fy
+        self.known_height = known_height
+
+        # 最小宽度和高度，用于过滤小行人边界框
+        self.min_width = min_width
+        self.min_height = min_height
+        
+        # 存储结果
+        self.results = []
+
+    def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
+        logger = MMLogger.get_current_instance()
+
+        for data_sample in data_samples:
+            # 获取图像的基础名称和路径
+            img_path = data_sample['img_path']
+            basename = osp.splitext(osp.basename(img_path))[0]
+
+            # 提取预测和真实标签的车道和行人区域
+            pred_label = data_sample['pred_sem_seg']['data'].squeeze().cpu().numpy()
+            label = data_sample['gt_sem_seg']['data'].squeeze().cpu().numpy()
+
+            label_lane = self.extract_mask(label, self.lane_idx)
+            pred_label_lane = self.extract_mask(pred_label, self.lane_idx)
+            label_pedestrian = self.extract_mask(label, self.pedestrian_idx)
+            pred_label_pedestrian = self.extract_mask(pred_label, self.pedestrian_idx)
+
+            # 读取原始图像
+            original_img = cv2.imread(img_path)
+
+            # 调用 visualize_intersection 计算行人重叠信息并直接标注到图像
+            self.visualize_intersection(
+                original_img, label_lane, pred_label_lane, label_pedestrian, pred_label_pedestrian
+            )
+
+            # 随机选择并保存图像，传递带有标注的图像对象
+            if self.output_dir is not None and len(self.saved_image_paths) < self.max_images_to_save:
+                self.save_image(original_img, basename, img_path)  # 传递标注后的 original_img
+
+            # 计算并记录 IoU
+            self.results.append({"lane_iou": self.compute_iou(label_lane, pred_label_lane)})
+
+
+    def save_image(self, visual_img, basename, img_path):   
+        """保存原始和带标注的图像"""
+        mkdir_or_exist(self.output_orig_dir)
+        mkdir_or_exist(self.output_visual_dir)
+        
+        # 保存原始图像
+        orig_save_path = osp.join(self.output_orig_dir, f"{basename}_original.png")
+        shutil.copy(img_path, orig_save_path)
+
+        # 保存标注后的图像
+        visual_save_path = osp.join(self.output_visual_dir, f"{basename}_occlusion_visualized.png")
+        cv2.imwrite(visual_save_path, visual_img)
+
+        self.saved_image_paths.append((orig_save_path, visual_save_path))
+
+
+    def extract_mask(self, label, idx):
+        """提取特定索引的二值掩码"""
+        return np.where(label == idx, 255, 0).astype("uint8")
+    
+    def find_contours(self, mask):
+        _, thresh = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        return contours
+    
+    def visualize_intersection(self, img, label_lane, pred_label_lane, label_pedestrian, pred_label_pedestrian):
+        """在图像上标出车道区域和行人区域，并标注距离和重叠率信息"""
+
+        min_width, min_height = 10, 10  # 设置最小宽度和高度阈值
+
+        img[label_lane == 255] = (255, 0, 0)  # 蓝色填充真实车道区域
+        img[pred_label_lane == 255] = (0, 255, 0)  # 绿色填充预测车道区域
+        img[pred_label_pedestrian == 255] = (0, 0, 255)  # 红色填充预测行人区域
+
+        # 计算每个行人区域的重叠率
+        contours_pedestrian = self.find_contours(pred_label_pedestrian)
+        for contour in contours_pedestrian:
+            x, y, w, h = cv2.boundingRect(contour)
+
+            # 过滤掉较小的行人区域
+            if w < min_width or h < min_height:
+                continue
+
+            roi = img[y:y+h, x:x+w]
+            red_area = np.sum(np.all(roi == [0, 0, 255], axis=-1))
+            green_area = np.sum(np.all(roi == [0, 255, 0], axis=-1))
+            overlap_ratio = green_area / red_area if red_area > 0 else 0
+
+            # 计算距离
+            distance = self.calculate_distance_monocular(h)  # 使用高度 h 计算距离
+
+            # 设置框颜色
+            box_color = (0, 255, 0) if overlap_ratio < 0.05 else (0, 255, 255)  # 绿色或黄色框
+
+            # 在图像上标注距离和重叠率
+            cv2.rectangle(img, (x, y), (x + w, y + h), box_color, 2)
+            cv2.putText(img, f"Ratio: {overlap_ratio:.2f}", (x, y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 1, cv2.LINE_AA)
+            cv2.putText(img, f"Distance: {distance:.2f}m", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 1, cv2.LINE_AA)
+
+
+    def calculate_distance_monocular(self, pixel_height):
+        """基于单目摄像机的行人像素高度计算距离"""
+        if pixel_height == 0:
+            return float('inf')  # 避免除以零
+        distance = (self.known_height * self.fy) / pixel_height
+        return distance
+    
+
+    def compute_iou(self, label_mask, pred_mask):
+        """计算 IoU 指标"""
+        intersection = np.sum((label_mask == 255) & (pred_mask == 255))
+        union = np.sum((label_mask == 255) | (pred_mask == 255))
+        return intersection / union if union > 0 else 0.0
+    
+    def compute_metrics(self, results: list) -> Dict[str, float]:
+        """计算并返回评估指标，必要时实现具体逻辑"""
+        # 这里可以添加具体的指标计算逻辑
+        return {}
+
+
+@METRICS.register_module()
+class MissedPedestrianMetric(BaseMetric):
+    def __init__(self,
+                 lane_idx: int = 0,
+                 sidewalk_idx: int = 1,
+                 pedestrian_idx: int = 11,
+                 min_area_threshold: int = 100,
+                 collect_device: str = 'cpu',
+                 prefix: Optional[str] = None,
+                 output_dir: Optional[str] = './missed_pedestrian_images',
+                 min_width: int = 10,
+                 min_height: int = 10,
+                 max_images_to_save: int = 100,
+                 iou_threshold_min: float = 0,
+                 iou_threshold_max: float = 0.5,
+                 **kwargs) -> None:
+        
+        super().__init__(collect_device=collect_device, prefix=prefix)
+        
+        self.lane_idx = lane_idx
+        self.sidewalk_idx = sidewalk_idx
+        self.pedestrian_idx = pedestrian_idx
+        self.min_area_threshold = min_area_threshold
+        self.iou_threshold_min = iou_threshold_min
+        self.iou_threshold_max = iou_threshold_max
+        
+        # 图像输出参数
+        self.output_dir = osp.abspath(output_dir) if output_dir else None
+        self.output_orig_dir = osp.join(self.output_dir, 'originals') if self.output_dir else None
+        self.output_visual_dir = osp.join(self.output_dir, 'visualized') if self.output_dir else None
+        if self.output_dir:
+            mkdir_or_exist(self.output_dir)
+            mkdir_or_exist(self.output_orig_dir)
+            mkdir_or_exist(self.output_visual_dir)
+
+        # 控制保存文件数量
+        self.saved_image_paths = []
+        self.max_images_to_save = max_images_to_save
+
+        # 最小宽度和高度
+        self.min_width = min_width
+        self.min_height = min_height
+        
+        # 存储结果
+        self.missed_pedestrian_dict = {}
+        self.results = []
+
+
+    def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
+        logger = MMLogger.get_current_instance()
+
+        for data_sample in data_samples:
+            # 获取图像的基础名称和路径
+            img_path = data_sample['img_path']
+            basename = osp.splitext(osp.basename(img_path))[0]
+
+            # 提取预测和真实标签的行人区域
+            pred_label = data_sample['pred_sem_seg']['data'].squeeze().cpu().numpy()
+            label = data_sample['gt_sem_seg']['data'].squeeze().cpu().numpy()
+
+            label_pedestrian = self.extract_mask(label, self.pedestrian_idx)
+            pred_label_pedestrian = self.extract_mask(pred_label, self.pedestrian_idx)
+
+            # 提取预测的车道和人行道区域
+            pred_label_lane = self.extract_mask(pred_label, self.lane_idx)
+            pred_label_sidewalk = self.extract_mask(pred_label, self.sidewalk_idx)
+
+
+            # 读取原始图像
+            original_img = cv2.imread(img_path)
+
+            # 查找漏检的行人并在图像上标记
+            missed_pedestrians = self.visualize_missed_pedestrians(original_img, label_pedestrian, pred_label_pedestrian, pred_label_lane, pred_label_sidewalk)
+
+
+            # 将漏检行人信息添加到字典中
+            if missed_pedestrians:
+                self.missed_pedestrian_dict[basename] = missed_pedestrians
+
+                # 仅在存在漏检行人时保存图像
+                if self.output_dir is not None and len(self.saved_image_paths) < self.max_images_to_save:
+                    self.save_image(original_img, basename, img_path)
+
+
+            # 将漏检行人数添加到 self.results
+            self.results.append({"missed_pedestrian_count": len(missed_pedestrians)})
+
+        # 将字典保存到 JSON 文件
+        output_file_path = osp.join(self.output_dir, "missed_pedestrians.json")
+        with open(output_file_path, 'w') as f:
+            json.dump(self.missed_pedestrian_dict, f, indent=4)
+
+
+
+    def save_image(self, visual_img, basename, img_path):
+        """保存原始和带标注的图像"""
+        mkdir_or_exist(self.output_orig_dir)
+        mkdir_or_exist(self.output_visual_dir)
+
+        # 保存原始图像
+        orig_save_path = osp.join(self.output_orig_dir, f"{basename}_original.png")
+        shutil.copy(img_path, orig_save_path)
+
+        # 保存标注后的图像
+        visual_save_path = osp.join(self.output_visual_dir, f"{basename}_missed_visualized.png")
+        cv2.imwrite(visual_save_path, visual_img)  # 确保 visual_img 是修改后的图像
+
+        self.saved_image_paths.append((orig_save_path, visual_save_path))
+        
+
+    def extract_mask(self, label, idx):
+        """提取特定索引的二值掩码"""
+        return np.where(label == idx, 255, 0).astype("uint8")
+    
+
+    def compute_iou_contours(self, contour1, contour2, mask_shape):
+        """基于轮廓计算 IoU"""
+        mask1 = np.zeros(mask_shape, dtype=np.uint8)
+        mask2 = np.zeros(mask_shape, dtype=np.uint8)
+        
+        # 绘制轮廓
+        cv2.drawContours(mask1, [contour1], -1, color=1, thickness=cv2.FILLED)
+        cv2.drawContours(mask2, [contour2], -1, color=1, thickness=cv2.FILLED)
+        
+        intersection = np.logical_and(mask1, mask2).sum()
+        union = np.logical_or(mask1, mask2).sum()
+        
+        return intersection / union if union != 0 else 0
+
+
+    def find_contours(self, mask):
+        """查找轮廓"""
+        _, thresh = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        return contours
+
+
+    def visualize_missed_pedestrians(self, img, label_pedestrian, pred_label_pedestrian, pred_label_lane, pred_label_sidewalk):
+        """在图像上标出漏检的行人区域，仅在满足 IoU 在 0 到 0.3 之间时绘制红框和轮廓"""
+
+        missed_pedestrians = []
+
+        img[pred_label_lane == 255] = (230, 216, 173)  # 淡蓝色填充预测车道区域
+        img[pred_label_sidewalk == 255] = (250, 230, 230)   # 浅紫色填充预测人行道区域
+
+        # 获取真实标签和预测标签的行人轮廓
+        gt_contours = self.find_contours(label_pedestrian)
+        pred_contours = self.find_contours(pred_label_pedestrian)
+
+        # 检查每个真实行人轮廓是否为漏检
+        for gt_contour in gt_contours:
+            x, y, w, h = cv2.boundingRect(gt_contour)
+
+            # 过滤掉较小的行人区域
+            if w < self.min_width or h < self.min_height:
+                continue
+
+            # 初始化最大 IoU 为 0
+            max_iou = 0
+            best_pred_contour = None
+            for pred_contour in pred_contours:
+                # 计算 GT 和 Pred 轮廓之间的 IoU
+                iou = self.compute_iou_contours(gt_contour, pred_contour, label_pedestrian.shape)
+                if iou > max_iou:
+                    max_iou = iou
+                    best_pred_contour = pred_contour  # 保存 IoU 最大的预测轮廓
+
+            # 只保留 IoU 在 0.02 到 0.3 之间的行人
+            if 0.02 < max_iou <= 0.3:
+                if best_pred_contour is not None:
+                    # 获取预测轮廓的外接矩形
+                    x_pred, y_pred, w_pred, h_pred = cv2.boundingRect(best_pred_contour)
+
+                    # 计算延伸后的框的底边坐标
+                    extended_y_bottom = y_pred + h_pred
+                    img_height = img.shape[0]
+                    
+                    # 向下延伸，直到与车道或人行道区域相交
+                    location_label = ""
+                    while extended_y_bottom < img_height:
+                        # 检查当前延伸后的底边是否与车道或人行道有交集
+                        extended_rect = img[extended_y_bottom:extended_y_bottom + 1, x_pred:x_pred + w_pred]
+                        lane_intersection = np.any(extended_rect == (230, 216, 173))  # 车道颜色
+                        sidewalk_intersection = np.any(extended_rect == (250, 230, 230))  # 人行道颜色
+
+                        if lane_intersection or sidewalk_intersection:
+                            # 如果与车道或人行道相交，停止延伸
+                            location_label = "Lane" if lane_intersection else "Sidewalk"
+                            break
+
+                        # 否则继续延伸
+                        extended_y_bottom += 1
+
+                    # 绘制延伸后的红色框
+                    cv2.rectangle(img, (x_pred, y_pred), (x_pred + w_pred, extended_y_bottom), (0, 0, 255), 2)
+
+                    # 在框外侧边显示位置标签
+                    if location_label:
+                        text_x = x_pred + w_pred + 5  # 在框右侧显示标签
+                        text_y = y_pred + h_pred // 2  # 标签显示在框的垂直中心
+                        cv2.putText(img, location_label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+                    # 记录原始和延伸后的边框信息
+                    missed_pedestrians.append({
+                        'bounding_box': (x, y, w, h),
+                        'iou': max_iou,
+                        'location_label': location_label,
+                        'extended_bounding_box': (x_pred, y_pred, w_pred, extended_y_bottom - y_pred)  # 记录延伸后的框
+                    })
+
+                    # 显示 IoU 值和“Missed”标签
+                    cv2.putText(img, f"Missed (IoU={max_iou:.2f})", (x_pred, y_pred - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+
+                    # 绘制预测轮廓（黄色）和真实轮廓（绿色）
+                    cv2.drawContours(img, [gt_contour], -1, (0, 255, 0), 2)  # 绿色真实标签轮廓
+                    cv2.drawContours(img, [best_pred_contour], -1, (0, 255, 255), 2)  # 黄色预测轮廓
+
+                    # 打印调试信息
+                    if lane_intersection:
+                        print(f"Pedestrian in lane at ({x_pred}, {extended_y_bottom})")
+                    elif sidewalk_intersection:
+                        print(f"Pedestrian on sidewalk at ({x_pred}, {extended_y_bottom})")
+                    else:
+                        print(f"Pedestrian not on lane or sidewalk")
+
+        return missed_pedestrians
+
+
+
+    def compute_metrics(self, results: list) -> Dict[str, float]:
+        """计算并返回评估指标"""
+        total_missed = sum(result["missed_pedestrian_count"] for result in results)
+        return {"total_missed_pedestrians": total_missed}
+
+@METRICS.register_module()
+class PedestrianDistanceMetricwithline(BaseMetric):
+    def __init__(self,
+                 pedestrian_idx: int = 11,
+                 collect_device: str = 'cpu',
+                 prefix: Optional[str] = None,
+                 fx: float = 2262.52,  # 水平方向焦距
+                 fy: float = 2265.30,  # 垂直方向焦距
+                 cx: float = 1096.98,  # 图像中心 x 坐标
+                 cy: float = 513.137,  # 图像中心 y 坐标
+                 image_width: int = 2048,
+                 image_height: int = 1024,
+                 camera_height: float = 0.37,  # 相机高度（米）
+                 pitch_angle: float = 0.03,  # 相机俯仰角（弧度）
+                 known_height: float = 1.7,  # 行人的实际高度
+                 **kwargs) -> None:
+        super().__init__(collect_device=collect_device, prefix=prefix)
+        self.pedestrian_idx = pedestrian_idx
+        self.fx = fx
+        self.fy = fy
+        self.cx = cx
+        self.cy = cy
+        self.image_width = image_width
+        self.image_height = image_height
+        self.camera_height = camera_height
+        self.pitch_angle = pitch_angle
+        self.known_height = known_height
+        self.results = []
+        self.image_info = []  # 用于存储每张图像的相关信息
+
+        # 初始化等距线数据列表
+        self.equidistant_lines = []  # 每个元素是 (像素高度, 距离)
+
+    def draw_ground_lines(self, image, num_lines: int = 15) -> None:
+        """
+        在图像上绘制以摄像机为圆心的等距半圆形地面线，并保存等距线数据。
+        """
+        height, width = image.shape[:2]
+
+        # 相机内参
+        fx = self.fx
+        fy = self.fy
+        cx = self.cx
+        cy = self.cy
+        h = self.camera_height  # 相机高度
+        theta_pitch = self.pitch_angle  # 相机俯仰角
+
+        # 清空等距线数据
+        self.equidistant_lines.clear()
+
+        # 设置实际距离范围
+        max_distance = 25  # 最大距离（米）
+        min_distance = 1    # 最小距离（米），从 1 米开始
+        distances = np.arange(min_distance, max_distance + 1, 1)  # 每隔 1 米
+        if num_lines is not None:
+            distances = distances[:num_lines]
+
+        for d in distances:
+            u_list = []
+            v_list = []
+
+            # 角度范围，从 -90 度到 90 度，覆盖摄像机前方的半圆
+            for angle_deg in range(-90, 91, 1):
+                angle_rad = np.deg2rad(angle_deg)
+                # 计算地面点在世界坐标系下的坐标
+                X_world = d * np.sin(angle_rad)
+                Z_world = d * np.cos(angle_rad)
+
+                # 相机坐标系下的点
+                X_cam = X_world
+                Y_cam = h  # 相机在地面以上，Y_cam = h
+                Z_cam = Z_world
+
+                # 旋转矩阵，考虑俯仰角（绕 X 轴旋转）
+                R_pitch = np.array([
+                    [1, 0, 0],
+                    [0, np.cos(theta_pitch), -np.sin(theta_pitch)],
+                    [0, np.sin(theta_pitch), np.cos(theta_pitch)]
+                ])
+
+                # 应用旋转
+                point_cam = np.array([X_cam, Y_cam, Z_cam])
+                point_cam_rotated = R_pitch @ point_cam
+
+                X_c = point_cam_rotated[0]
+                Y_c = point_cam_rotated[1]
+                Z_c = point_cam_rotated[2]
+
+                if Z_c <= 0:
+                    continue  # 忽略相机后方的点
+
+                # 投影到图像坐标系
+                u = fx * X_c / Z_c + cx
+                v = fy * Y_c / Z_c + cy
+
+                # 检查点是否在图像范围内
+                if 0 <= u < width and 0 <= v < height:
+                    u_list.append(int(u))
+                    v_list.append(int(v))
+
+            # 如果有足够的点，绘制半圆形地面线
+            if len(u_list) > 1:
+                # 记录当前等距线的平均像素高度（v 值）
+                avg_v = int(np.mean(v_list))
+                self.equidistant_lines.append((avg_v, d))  # (像素高度, 距离)
+
+                # 绘制等距线
+                pts = np.array([[u, v] for u, v in zip(u_list, v_list)], dtype=np.int32)
+                cv2.polylines(image, [pts], isClosed=False, color=(0, 255, 255), thickness=2)
+                # 标注距离
+                mid_index = len(u_list) // 2
+                cv2.putText(image, f"{d:.1f}m", (u_list[mid_index], v_list[mid_index] - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+    def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
+        """
+        处理每批数据样本，提取预测和真实标签，计算每个行人的距离。
+        """
+        for data_sample in data_samples:
+            # 获取预测标签
+            pred_label = data_sample['pred_sem_seg']['data'].squeeze().cpu().numpy()
+            image_path = data_sample['img_path']  # 获取图像路径
+            image_name = osp.basename(image_path)
+            image = cv2.imread(image_path)  # 读取原始图像
+
+            # 绘制等距线并获取等距线数据
+            self.draw_ground_lines(image, num_lines=15)
+            equidistant_lines = self.equidistant_lines  # 获取等距线数据
+
+            # 提取行人区域
+            pred_label_pedestrian = np.where(pred_label == self.pedestrian_idx, 255, 0).astype("uint8")
+
+            # 获取预测结果中的行人轮廓
+            ret_pred, thresh_pred = cv2.threshold(pred_label_pedestrian, 127, 255, cv2.THRESH_BINARY)
+            pred_contours, hierarchy_pred = cv2.findContours(thresh_pred, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # 存储当前图像的行人信息
+            pedestrian_info = []
+            for contour in pred_contours:
+                x, y, w, h = cv2.boundingRect(contour)
+                # 获取行人的最低像素点（y + h）
+                lowest_point = y + h
+
+                # 比较最低像素点与等距线，确定行人距离
+                distance = self.get_distance_from_lines(lowest_point, equidistant_lines)
+
+                # 在图像上绘制行人轮廓和距离信息
+                cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
+                cv2.putText(image, f'Distance: {distance:.1f}m', (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+                # 存储信息
+                pedestrian_info.append({
+                    'contour': contour,
+                    'distance': distance,
+                    'bounding_box': (x, y, w, h),
+                })
+
+            # 保存带有等距线和行人距离标注的图像
+            result_image_name = f'result_{image_name}'
+            cv2.imwrite(result_image_name, image)
+            print(f'保存带有等距线和行人距离标注的图像: {result_image_name}')
+
+            # 存储图像信息
+            self.image_info.append({
+                'image_name': image_name,
+                'image_path': image_path,
+                'pedestrian_info': pedestrian_info,
+            })
+
+    def get_distance_from_lines(self, pixel_y, equidistant_lines):
+        """
+        根据像素 y 坐标，找到对应的等距线，返回对应的距离。
+        """
+        # 按照像素高度从小到大排序（即从图像顶部到底部）
+        equidistant_lines_sorted = sorted(equidistant_lines, key=lambda x: x[0])
+
+        # 遍历等距线，找到最低像素点所在的区间
+        for idx, (line_y, distance) in enumerate(equidistant_lines_sorted):
+            if pixel_y <= line_y:
+                # 行人在该等距线之上，返回对应的距离
+                return distance
+        # 如果低于所有等距线，返回最大距离
+        return equidistant_lines_sorted[-1][1]
+
+    def compute_metrics(self, results: list) -> Dict[str, float]:
+        """
+        计算累计的行人检测指标，例如平均距离。
+        """
+        # 计算所有行人的平均距离
+        all_distances = []
+        for info in self.image_info:
+            for ped in info['pedestrian_info']:
+                all_distances.append(ped['distance'])
+        if all_distances:
+            average_distance = sum(all_distances) / len(all_distances)
+        else:
+            average_distance = 0
+        print(f'平均行人距离: {average_distance:.2f} 米')
+        return {'average_pedestrian_distance': average_distance}
