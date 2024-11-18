@@ -1101,7 +1101,7 @@ class WorstPedestrain(BaseMetric):
             palette[i] = [i * (255 // num_classes), 255 - i * (255 // num_classes), (i * 37) % 255]
         return palette
     
-
+# iou在0.3以上的行人位置
 @METRICS.register_module()
 class LaneSegmentationMetric(BaseMetric):
     def __init__(self,
@@ -1262,7 +1262,7 @@ class LaneSegmentationMetric(BaseMetric):
         # 这里可以添加具体的指标计算逻辑
         return {}
 
-
+# 漏检行人的位置 检测iou在0.01-0.3之间的人定义为漏检人群
 @METRICS.register_module()
 class MissedPedestrianMetric(BaseMetric):
     def __init__(self,
@@ -1496,6 +1496,7 @@ class MissedPedestrianMetric(BaseMetric):
         """计算并返回评估指标"""
         total_missed = sum(result["missed_pedestrian_count"] for result in results)
         return {"total_missed_pedestrians": total_missed}
+
 
 @METRICS.register_module()
 class PedestrianDistanceMetricwithline(BaseMetric):
