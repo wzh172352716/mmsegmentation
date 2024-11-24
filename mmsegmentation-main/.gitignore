@@ -27,9 +27,8 @@ MANIFEST
 log/
 checkpoint/
 data/
-missed_pedestrian_images/
-high_lane_intersection_images/
-
+data_bk/
+pedestrians_detection/
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
