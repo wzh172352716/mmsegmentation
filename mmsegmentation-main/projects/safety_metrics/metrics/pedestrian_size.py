@@ -2722,14 +2722,17 @@ class PedestrianDistanceMetric(BaseMetric):
                 missed_pedestrian_dict[basename] = result['missed']
             if result['false_positives']:
                 false_pedestrians_dict[basename] = result['false_positives']
-            # Collect total_score from scoring_results
+            
+            # Collect total_score from scoring_results, excluding zero scores
             if 'scoring_results' in result and 'total_score' in result['scoring_results']:
-                total_scores.append(result['scoring_results']['total_score'])
+                score = result['scoring_results']['total_score']
+                if score != 0:
+                    total_scores.append(score)
         
         # Calculate the average total_score
         if total_scores:
             average_total_score = sum(total_scores) / len(total_scores)
-            print(f"Average Total Score: {average_total_score}")
+            # print(f"Average Total Score: {average_total_score}")
         else:
             average_total_score = 0.0
             print("No total scores found in the results.")
